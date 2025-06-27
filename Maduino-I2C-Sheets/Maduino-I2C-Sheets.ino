@@ -79,7 +79,7 @@ void processReceivedData(String data) {
         SerialUSB.println(moistData);
         SerialUSB.println("===============================");
         // You can process the complete moisture CSV string here
-        processMoistureData(moistData);
+        uploadData(moistData);
         moistData = ""; // Clear for next transmission
       } 
       else if (currentDataType == "Temp") {
@@ -87,7 +87,7 @@ void processReceivedData(String data) {
         SerialUSB.println(tempData);
         SerialUSB.println("==================================");
         // You can process the complete temperature CSV string here
-        processTemperatureData(tempData);
+        uploadData(tempData);
         tempData = ""; // Clear for next transmission
       }
       
@@ -96,16 +96,6 @@ void processReceivedData(String data) {
   }
 }
 
-void processMoistureData(String completeData) {
-  // Process the complete moisture CSV string
-  // You can add your specific processing logic here
-
-  // Example: prepare for LoRa transmission, store in memory, etc.
-}
-
-void processTemperatureData(String completeData) {
-  // Process the complete temperature CSV string
-  // You can add your specific processing logic here
-
-  // Example: prepare for LoRa transmission, store in memory, etc.
+void uploadData(String completeData) {
+  
 }
