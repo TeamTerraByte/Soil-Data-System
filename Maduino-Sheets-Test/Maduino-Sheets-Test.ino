@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+#include "secrets.h"
 
 #define BAUD 115200
 #define DEBUG true
@@ -11,36 +12,48 @@
 #define LTE_FLIGHT_PIN  7
 /* ------------------------------------------------------------------- */
 
-/* ---------- CONSTANTS ---------------------------------------------- */
-const char HTTPS_URL[] =
-  "https://script.google.com/macros/s/AKfycbybv1kcHIaqrGik924pnxW2a3ZmDXkeCn56Kjliggc3300nkH5x6I6uC7_Eg2qZ_i4F/exec";
-/* ------------------------------------------------------------------- */
-
 /* ---------- PROTOTYPES --------------------------------------------- */
 String  sendAT(const String& cmd, uint32_t to = 2000, bool dbg = DEBUG);
 bool    modemBoot();
 bool    networkAttach();
-bool    postHTTPS(const char* url, const String& payload);
+bool    postHTTPS(const char* SHEET_URL, const String& payload);
 /* ------------------------------------------------------------------- */
 
 /* ================================ SETUP ============================ */
 void setup() {
     SerialUSB.begin(BAUD);
+    delay(100);
+    SerialUSB.println("\n=====================================");
+    SerialUSB.println("Maduino Google Sheets Upload Test");
+    SerialUSB.println("=====================================");
+    delay(100);
     Serial1.begin(BAUD);
 
     if (!modemBoot()) { while (1); }               // halt on fail
     if (!networkAttach()) { while (1); }           // halt on fail
 
     /* ------- TEST PAYLOAD ------------------------------------------- */
-    String payload = "hello-world\n1234,T,24,25,26,27,28,29,30,31\n";
+    String payload = "{\n\"type\": \"Test Entry\",\n\"value1\": 69.5,\n\"value2\": 20.3,\n\"value3\": 30.7,\n\"value4\": 40.2,\n\"value5\": 50.9,\n\"value6\": 60.1,\n\"value7\": 70.4,\n\"value8\": 80.6\n}";
 
-    if (postHTTPS(HTTPS_URL, payload))
+    if (postHTTPS(SHEET_URL, payload))
         SerialUSB.println(F("\nUPLOAD OK"));
     else
         SerialUSB.println(F("\nUPLOAD FAIL"));
 }
 
-void loop() { /* nothing */ }
+void loop() {
+    // If data comes from Serial Monitor, send it to AT module
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n');
+        Serial1.println(command);
+    }
+
+    // If data comes from AT module, send it to Serial Monitor
+    if (Serial1.available()) {
+        String response = Serial1.readStringUntil('\n');
+        Serial.println(response);
+    }
+}
 
 /* =============================== HELPERS =========================== */
 
@@ -96,13 +109,19 @@ String sendAT(const String& cmd, uint32_t to, bool dbg) {
     return resp;
 }
 
-/* Post a small text payload via HTTPS */
-bool postHTTPS(const char* url, const String& payload) {
+/* Post a small text payload via HTTPS *//* Post a small text payload via HTTPS */
+bool postHTTPS(const char* SHEET_URL, const String& payload) {
     sendAT("AT+HTTPTERM",  1000, false);   // clean slate
+
+    sendAT("AT+CSSLCFG=\"sslversion\",0,4");     // TLS 1.2
+    sendAT("AT+CSSLCFG=\"authmode\",0,0");       // No auth
+    sendAT("AT+CSSLCFG=\"ignorertctime\",0,1");  // Ignore RTC time
+    
     sendAT("AT+HTTPINIT");
     sendAT("AT+HTTPPARA=\"CID\",1");
-    sendAT("AT+HTTPPARA=\"URL\",\"" + String(url) + "\"");
-    sendAT("AT+HTTPPARA=\"CONTENT\",\"text/plain\"");
+    sendAT("AT+HTTPPARA=\"SSLCFG\",0");
+    sendAT("AT+HTTPPARA=\"URL\",\"" + String(SHEET_URL) + "\"");
+    sendAT("AT+HTTPPARA=\"CONTENT\",\"application/json\"");
 
     String r = sendAT("AT+HTTPDATA=" + String(payload.length()) + ",10000", 1000);
     if (r.indexOf("DOWNLOAD") < 0) { SerialUSB.println(F("HTTPDATA ERR")); return false; }
@@ -111,7 +130,10 @@ bool postHTTPS(const char* url, const String& payload) {
     delay(100);
 
     String act = sendAT("AT+HTTPACTION=1", 8000);
-    if (act.indexOf(",200,") < 0) { SerialUSB.println(F("HTTPACTION FAIL")); return false; }
+    SerialUSB.println("\n========= Response =========");
+    SerialUSB.println(act);
+    SerialUSB.println("\n============================");
+
 
     String body = sendAT("AT+HTTPREAD", 3000);
     sendAT("AT+HTTPTERM");
