@@ -15,7 +15,7 @@ void setup() {
   SerialUSB.begin(115200);
   Serial1.begin(115200);
 
-    if (!modemBoot()) { while (1); }               // halt on fail
+    while ( !modemBoot() );               // halt on fail
     if (!networkAttach()) { while (1); }           // halt on fail
   SerialUSB.println("\nSend commands to the Serial1 terminal");
 }
@@ -23,7 +23,25 @@ void setup() {
 void loop() {
     if (SerialUSB.available()) {
         String command = SerialUSB.readStringUntil('\n');
-        sendAT(command);
+        
+        // Find the comma separator
+        int commaIndex = command.indexOf(',');
+        
+        if (commaIndex != -1) {
+            // Split the string at the comma
+            String atCommand = command.substring(0, commaIndex);
+            String delayStr = command.substring(commaIndex + 1);
+            
+            // Send AT command
+            sendAT(atCommand);
+            
+            // Convert delay string to integer and apply delay
+            int delayTime = delayStr.toInt();
+            delay(delayTime);
+        } else {
+            // If no comma found, just send the command as before
+            sendAT(command);
+        }
     }
 
     // If data comes from AT module, send it to Serial1 Monitor
