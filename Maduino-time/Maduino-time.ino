@@ -101,7 +101,7 @@ String getTime(){
   int q_index = time.indexOf("\"");
   time = time.substring(q_index + 1, q_index + 21);
 
-  SerialUSB.println("getTime() responsne:{"+time+"}");
+  if (DEBUG) SerialUSB.println("getTime() response:"+time);
 
   return time;
 }
