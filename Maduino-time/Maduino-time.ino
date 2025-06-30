@@ -10,7 +10,7 @@ const bool DEBUG = true;
 String  sendAT(const String& cmd, uint32_t to = 2000, bool dbg = DEBUG);
 bool    modemBoot();
 bool    networkAttach();
-void    updateTime();
+void    enableTimeUpdates();
 String  getTime();
 
 void setup() {
@@ -25,7 +25,7 @@ void setup() {
   }
   if (!networkAttach()) { while (1); }           // halt on fail
   
-  updateTime();
+  enableTimeUpdates();
   getTime();
 
   SerialUSB.println("\nSend commands to the Serial1 terminal");
@@ -92,7 +92,7 @@ bool networkAttach() {
     return true;
 }
 
-void updateTime(){
+void enableTimeUpdates(){
   String r = sendAT("AT+CTZU=1");
 }
 
