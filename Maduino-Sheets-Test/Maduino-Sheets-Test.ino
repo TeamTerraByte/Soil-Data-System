@@ -118,10 +118,14 @@ String sendAT(const String& cmd, uint32_t to, bool dbg) {
 bool postHTTPS(const char* SHEET_URL, const String& payload) {
     sendAT("AT+HTTPTERM",  1000, false);   // clean slate
 
-    sendAT("AT+CSSLCFG=\"sslversion\",0,4");     // TLS 1.2
-    sendAT("AT+CSSLCFG=\"authmode\",0,0");       // No auth
-    sendAT("AT+CSSLCFG=\"ignorertctime\",0,1");  // Ignore RTC time
+    sendAT("AT+CGMR");  // check modem firmware
+    sendAT("AT+CSSLCFG=\"sslversion\",0,4");    // TLS 1.2
+    sendAT("AT+CSSLCFG=\"authmode\",0,1");      // Server auth
     
+    // disable cert verification
+    sendAT("AT+CSSLCFG=\"ignorertctime\",0,1");
+    sendAT("AT+CSSLCFG=\"ignorelocaltime\",0,1");
+
     sendAT("AT+HTTPINIT");
     sendAT("AT+HTTPPARA=\"CID\",1");
     sendAT("AT+HTTPPARA=\"SSLCFG\",0");
@@ -132,15 +136,14 @@ bool postHTTPS(const char* SHEET_URL, const String& payload) {
     if (r.indexOf("DOWNLOAD") < 0) { SerialUSB.println(F("HTTPDATA ERR")); return false; }
 
     Serial1.print(payload);                     // send body
-    delay(100);
+    delay(3000);
 
-    String act = sendAT("AT+HTTPACTION=1", 8000);
-    SerialUSB.println("\n========= Response =========");
-    SerialUSB.println(act);
-    SerialUSB.println("\n============================");
-
+    sendAT("AT+HTTPACTION=1", 8000);
 
     String body = sendAT("AT+HTTPREAD", 3000);
+    SerialUSB.println("\n========= Response =========");
+    SerialUSB.println(body);
+    SerialUSB.println("\n============================");
     sendAT("AT+HTTPTERM");
 
     return (body.indexOf("Success") >= 0);
