@@ -17,6 +17,8 @@ String  sendAT(const String& cmd, uint32_t to = 2000, bool dbg = DEBUG);
 bool    modemBoot();
 bool    networkAttach();
 bool    postHTTPS(const char* SHEET_URL, const String& payload);
+void    enableTimeUpdates();
+String  getTime();
 /* ------------------------------------------------------------------- */
 
 /* ================================ SETUP ============================ */
@@ -33,7 +35,10 @@ void setup() {
     if (!networkAttach()) { while (1); }           // halt on fail
 
     /* ------- TEST PAYLOAD ------------------------------------------- */
-    String payload = "{\n\"type\": \"Test Entry\",\n\"value1\": 69.5,\n\"value2\": 20.3,\n\"value3\": 30.7,\n\"value4\": 40.2,\n\"value5\": 50.9,\n\"value6\": 60.1,\n\"value7\": 70.4,\n\"value8\": 80.6\n}";
+    String payload = "Noon,Test,1,2,3,4,5,6,7,8";
+
+    enableTimeUpdates();
+    getTime();
 
     if (postHTTPS(SHEET_URL, payload))
         SerialUSB.println(F("\nUPLOAD OK"));
@@ -139,4 +144,18 @@ bool postHTTPS(const char* SHEET_URL, const String& payload) {
     sendAT("AT+HTTPTERM");
 
     return (body.indexOf("Success") >= 0);
+}
+
+void enableTimeUpdates(){
+  String r = sendAT("AT+CTZU=1");
+}
+
+String getTime(){
+  String time = sendAT("AT+CCLK?");
+  int q_index = time.indexOf("\"");
+  time = time.substring(q_index + 1, q_index + 21);
+
+  if (DEBUG) SerialUSB.println("getTime() response:"+time);
+
+  return time;
 }
