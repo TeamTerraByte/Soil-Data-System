@@ -126,7 +126,7 @@ bool postHTTPS(const char* SHEET_URL, const String& payload) {
     sendAT("AT+HTTPPARA=\"CID\",1");
     sendAT("AT+HTTPPARA=\"SSLCFG\",0");
     sendAT("AT+HTTPPARA=\"URL\",\"" + String(SHEET_URL) + "\"");
-    sendAT("AT+HTTPPARA=\"CONTENT\",\"application/json\"");
+    sendAT("AT+HTTPPARA=\"CONTENT\",\"text/plain\"");
 
     String r = sendAT("AT+HTTPDATA=" + String(payload.length()) + ",10000", 1000);
     if (r.indexOf("DOWNLOAD") < 0) { SerialUSB.println(F("HTTPDATA ERR")); return false; }
