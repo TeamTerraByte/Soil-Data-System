@@ -1,68 +1,44 @@
-#include <Arduino.h>
-#include <SPI.h>
-#include <SD.h>
-#include "secrets.h"
-
-#define BAUD 115200
-#define DEBUG true
-
 /* ---------- PIN MAP ------------------------------------------------ */
 #define LTE_RESET_PIN   6
 #define LTE_PWRKEY_PIN  5
 #define LTE_FLIGHT_PIN  7
 /* ------------------------------------------------------------------- */
 
-/* ---------- PROTOTYPES --------------------------------------------- */
+const bool DEBUG = true;
+
+// PROTOTYPES
 String  sendAT(const String& cmd, uint32_t to = 2000, bool dbg = DEBUG);
 bool    modemBoot();
 bool    networkAttach();
-bool    postHTTPS(const char* SHEET_URL, const String& payload);
-void    enableTimeUpdates();
-String  getTime();
-/* ------------------------------------------------------------------- */
 
-/* ================================ SETUP ============================ */
 void setup() {
-    SerialUSB.begin(BAUD);
-    delay(100);
-    SerialUSB.println("\n=====================================");
-    SerialUSB.println("Maduino Google Sheets Upload Test");
-    SerialUSB.println("=====================================");
-    delay(100);
-    Serial1.begin(BAUD);
+  SerialUSB.begin(115200);
+  Serial1.begin(115200);
 
-    if (!modemBoot()) { while (1); }               // halt on fail
+    while ( !modemBoot() ){
+        delay(1000);
+    }              
     if (!networkAttach()) { while (1); }           // halt on fail
 
-    /* ------- TEST PAYLOAD ------------------------------------------- */
-    String payload = "Noon,Test,1,2,3,4,5,6,7,8";
+    init_ssl();
 
-    enableTimeUpdates();
-    getTime();
-
-    if (postHTTPS(SHEET_URL, payload))
-        SerialUSB.println(F("\nUPLOAD OK"));
-    else
-        SerialUSB.println(F("\nUPLOAD FAIL"));
+    // sendAT("");
+  SerialUSB.println("\nSend commands to the Serial1 terminal");
 }
 
 void loop() {
-    // If data comes from Serial Monitor, send it to AT module
-    if (Serial.available()) {
-        String command = Serial.readStringUntil('\n');
-        Serial1.println(command);
+    if (SerialUSB.available()) {
+        String command = SerialUSB.readStringUntil('\n');
+        sendAT(command);
     }
 
-    // If data comes from AT module, send it to Serial Monitor
-    if (Serial1.available()) {
+    // If data comes from AT module, send it to Serial1 Monitor
+    while (Serial1.available()) {
         String response = Serial1.readStringUntil('\n');
-        Serial.println(response);
+        SerialUSB.println(response);
     }
 }
 
-/* =============================== HELPERS =========================== */
-
-/* Boot sequence: pulse PWRKEY 2 s, wait 5 s for modem ready */
 bool modemBoot() {
     pinMode(LTE_RESET_PIN,  OUTPUT);
     pinMode(LTE_PWRKEY_PIN, OUTPUT);
@@ -85,7 +61,6 @@ bool modemBoot() {
     return true;
 }
 
-/* Attach to T-Mobile LTE (fast.t-mobile.com) */
 bool networkAttach() {
     sendAT("AT+CFUN=1");
     sendAT("AT+CGDCONT=1,\"IP\",\"fast.t-mobile.com\"");   // APN
@@ -103,8 +78,6 @@ bool networkAttach() {
     return true;
 }
 
-
-/* General AT wrapper */
 String sendAT(const String& cmd, uint32_t to, bool dbg) {
     String resp;
     Serial1.println(cmd);
@@ -114,51 +87,16 @@ String sendAT(const String& cmd, uint32_t to, bool dbg) {
     return resp;
 }
 
-/* Post a small text payload via HTTPS *//* Post a small text payload via HTTPS */
-bool postHTTPS(const char* SHEET_URL, const String& payload) {
-    sendAT("AT+HTTPTERM",  1000, false);   // clean slate
-
-    sendAT("AT+CGMR");  // check modem firmware
-    sendAT("AT+CSSLCFG=\"sslversion\",0,4");    // TLS 1.2
-    sendAT("AT+CSSLCFG=\"authmode\",0,1");      // Server auth
-    
-    // disable cert verification
-    sendAT("AT+CSSLCFG=\"ignorertctime\",0,1");
-    sendAT("AT+CSSLCFG=\"ignorelocaltime\",0,1");
-
-    sendAT("AT+HTTPINIT");
-    sendAT("AT+HTTPPARA=\"CID\",1");
-    sendAT("AT+HTTPPARA=\"SSLCFG\",0");
-    sendAT("AT+HTTPPARA=\"URL\",\"" + String(SHEET_URL) + "\"");
-    sendAT("AT+HTTPPARA=\"CONTENT\",\"text/plain\"");
-
-    String r = sendAT("AT+HTTPDATA=" + String(payload.length()) + ",10000", 1000);
-    if (r.indexOf("DOWNLOAD") < 0) { SerialUSB.println(F("HTTPDATA ERR")); return false; }
-
-    Serial1.print(payload);                     // send body
-    delay(3000);
-
-    sendAT("AT+HTTPACTION=1", 8000);
-
-    String body = sendAT("AT+HTTPREAD", 3000);
-    SerialUSB.println("\n========= Response =========");
-    SerialUSB.println(body);
-    SerialUSB.println("\n============================");
+void init_ssl() { 
     sendAT("AT+HTTPTERM");
-
-    return (body.indexOf("Success") >= 0);
-}
-
-void enableTimeUpdates(){
-  String r = sendAT("AT+CTZU=1");
-}
-
-String getTime(){
-  String time = sendAT("AT+CCLK?");
-  int q_index = time.indexOf("\"");
-  time = time.substring(q_index + 1, q_index + 21);
-
-  if (DEBUG) SerialUSB.println("getTime() response:"+time);
-
-  return time;
+    sendAT("AT+CSSLCFG=\"sslversion\",0,4");
+    sendAT("AT+CSSLCFG=\"authmode\",0,1");
+    sendAT("AT+CSSLCFG=\"cacert\",0,\"cacert4.pem\"");
+    sendAT("AT+CSSLCFG=\"enableSNI\",0,1");
+    sendAT("AT+CSSLCFG=\"ignorelocaltime\",0,0");
+    sendAT("AT+HTTPINIT");
+    sendAT("AT+HTTPPARA=\"URL\",\"https://www.google.com\"");
+    sendAT("AT+HTTPPARA=\"SSLCFG\",0");
+    sendAT("AT+HTTPACTION=0");
+    sendAT("AT+CSSLCFG?");
 }
