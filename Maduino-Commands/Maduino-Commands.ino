@@ -12,16 +12,35 @@ bool    modemBoot();
 bool    networkAttach();
 
 void setup() {
-  SerialUSB.begin(115200);
-  Serial1.begin(115200);
+    SerialUSB.begin(115200);
+    Serial1.begin(115200);
 
-    while ( !modemBoot() ){
-        delay(1000);
-    }              
-    if (!networkAttach()) { while (1); }           // halt on fail
 
-    // sendAT("");
-  SerialUSB.println("\nSend commands to the Serial1 terminal");
+    // LTE module power sequence
+    pinMode(LTE_RESET_PIN, OUTPUT);
+    digitalWrite(LTE_RESET_PIN, LOW);
+
+    pinMode(LTE_PWRKEY_PIN, OUTPUT);
+    delay(100);
+    digitalWrite(LTE_PWRKEY_PIN, HIGH);
+    delay(2000);
+    digitalWrite(LTE_PWRKEY_PIN, LOW);
+
+    pinMode(LTE_FLIGHT_PIN, OUTPUT);
+    digitalWrite(LTE_FLIGHT_PIN, LOW); // Normal mode
+
+    delay(30000); // Wait for LTE module
+
+    // LTE network setup
+    sendAT("AT+CCID", 3000, DEBUG);
+    sendAT("AT+CREG?", 3000, DEBUG);
+    sendAT("AT+CGATT=1", 1000, DEBUG);
+    sendAT("AT+CGACT=1,1", 1000, DEBUG);
+    sendAT("AT+CGDCONT=1,\"IP\",\"fast.t-mobile.com\"", 1000, DEBUG);
+    sendAT("AT+CGPADDR=1", 3000, DEBUG);          // show pdp address
+
+        // sendAT("");
+    SerialUSB.println("\nSend commands to the Serial1 terminal");
 }
 
 void loop() {
@@ -50,7 +69,7 @@ bool modemBoot() {
     digitalWrite(LTE_PWRKEY_PIN, LOW);
     delay(5000);
 
-    String ok = sendAT("AT", 1000, false);
+    String ok = sendAT("AT", 2000, true);
     if (ok.indexOf("OK") < 0) {
     SerialUSB.println(F("MODEM NOT RESPONDING"));
     return false;
