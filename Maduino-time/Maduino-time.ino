@@ -32,6 +32,8 @@ void setup() {
 }
 
 void loop() {
+    getTime();
+    delay(1000);
     if (SerialUSB.available()) {
         String command = SerialUSB.readStringUntil('\n');
         sendAT(command);

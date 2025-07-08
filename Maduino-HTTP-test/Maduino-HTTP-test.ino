@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <SPI.h>
-// #include "secrets.h"
+#include "secrets.h"
 
 #define DEBUG true
 
@@ -13,25 +13,23 @@
 // #define SD_CS_PIN 4  // Adjust if different
 bool first = true;
 
-// String Apikey = API_WRITE_KEY; // ThingSpeak API Key
+String Apikey = API_WRITE_KEY; // ThingSpeak API Key
 File logFile;
 
 // function prototypes
 void resetLTE();
 String sendData(String command, const int timeout, boolean debug);
 void flushSerial1Input();
+void ltePowerSequence();
 
 void setup() {
   SerialUSB.begin(115200);
   Serial1.begin(115200);
-  
 
   // LTE module power sequence
   pinMode(LTE_RESET_PIN, OUTPUT);
   pinMode(LTE_PWRKEY_PIN, OUTPUT);
   ltePowerSequence();
-
-
 
   SerialUSB.println("Soil Sensor 4G LTE Ready!");
 }
@@ -45,15 +43,13 @@ void loop() {
 
   // Send to ThingSpeak
   sendData("AT+HTTPINIT", 2000, DEBUG);
-  // String http_str = "AT+HTTPPARA=\"URL\",\"http://api.thingspeak.com/update?api_key=" + Apikey + "&field1=" + String((int)67) + "\"";
-  String http_str = "AT+HTTPPARA=\"URL\",\"http://api.thingspeak.com\"";
-  // String http_str = "AT+HTTPPARA=\"URL\",\"https://www.google.com\"";
+  String http_str = "AT+HTTPPARA=\"URL\",\"http://api.thingspeak.com/update?api_key=" + Apikey + "&field1=" + String((int)420) + "\"";
   sendData(http_str, 2000, DEBUG);
   sendData("AT+HTTPPARA=\"CONTENT\",\"application/x-www-form-urlencoded\"", 1000, DEBUG);
   sendData("AT+HTTPACTION=0", 30000, DEBUG);
   sendData("AT+HTTPTERM", 3000, DEBUG);
 
-  delay(30000);
+  delay(15000);
 }
 
 String sendData(String command, const int timeout, boolean debug) {

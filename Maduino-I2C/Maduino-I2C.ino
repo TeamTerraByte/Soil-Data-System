@@ -12,6 +12,9 @@ void setup() {
   Wire.begin(SLAVE_ADDRESS);     // Initialize I2C as slave with address 0x08
   Wire.onReceive(receiveEvent);  // Register function to handle incoming data
   SerialUSB.begin(115200);            // Initialize SerialUSB communication
+  while(!SerialUSB);
+
+  delay(1000);
   SerialUSB.println("Maduino Zero I2C Slave Ready");
   SerialUSB.println("Waiting for data from Arduino Uno...");
 }
