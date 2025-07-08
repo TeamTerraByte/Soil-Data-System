@@ -14,7 +14,6 @@
 bool first = true;
 
 String Apikey = API_WRITE_KEY; // ThingSpeak API Key
-File logFile;
 
 // function prototypes
 void resetLTE();

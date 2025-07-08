@@ -15,7 +15,6 @@ void setup() {
     SerialUSB.begin(115200);
     Serial1.begin(115200);
 
-
     // LTE module power sequence
     pinMode(LTE_RESET_PIN, OUTPUT);
     digitalWrite(LTE_RESET_PIN, LOW);

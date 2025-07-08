@@ -2,7 +2,7 @@
 #include <Wire.h>
 
 #define DATA_PIN 2        // Blue wire connected to digital pin 2
-#define POWER_PIN 3       // Controls relay power to sensor
+// #define POWER_PIN 3       // Controls relay power to sensor
 #define SLAVE_ADDRESS 0x08  // I2C address of the Maduino Zero
 
 SDI12 mySDI12(DATA_PIN);
@@ -11,42 +11,44 @@ String probeAddress = "C";  // Default probe address
 unsigned long lastMeasurement = 0;
 const unsigned long MEASUREMENT_INTERVAL = 30000; // 30 seconds
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds for voltage stabilization
-bool sensorPowered = false;
+// bool sensorPowered = false;
 
 void setup() {
   Serial.begin(9600);
   Wire.begin(); // Initialize I2C as master
   
   // Configure power control pin
-  pinMode(POWER_PIN, OUTPUT);
-  digitalWrite(POWER_PIN, HIGH); // Start with sensor powered off (relay logic inverted)
-  sensorPowered = false;
+  // pinMode(POWER_PIN, OUTPUT);
+  // digitalWrite(POWER_PIN, HIGH); // Start with sensor powered off (relay logic inverted)
+  // sensorPowered = false;
   
   // Small delay to let everything initialize
   delay(500);
   
   // Power on sensor and initialize
-  powerOnSensor();
+  // powerOnSensor();
   
   // Initialize SDI-12 after sensor is powered and stabilized
   mySDI12.begin();
   
   // Initialize and find probe address
-  initializeProbe();
+  while(!initializeProbe()) {
+    delay(1000);
+  }
   
   // Take first measurement immediately
   takeMeasurements();
   lastMeasurement = millis();
   
   // Power off sensor after first measurement
-  powerOffSensor();
+  // powerOffSensor();
 }
 
 void loop() {
   // Check if it's time for next measurement
   if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
     // Power on sensor before measurement
-    powerOnSensor();
+    // powerOnSensor();
     
     // Re-initialize SDI-12 communication
     mySDI12.begin();
@@ -56,7 +58,7 @@ void loop() {
     lastMeasurement = millis();
     
     // Power off sensor after measurement to save power
-    powerOffSensor();
+    // powerOffSensor();
   }
   
   // Check for manual commands from Serial Monitor
@@ -65,10 +67,10 @@ void loop() {
     command.trim();
     if (command.length() > 0) {
       // Power on sensor for manual commands
-      if (!sensorPowered) {
-        powerOnSensor();
-        mySDI12.begin();
-      }
+      // if (!sensorPowered) {
+      //   // powerOnSensor();
+      //   mySDI12.begin();
+      // }
       
       sendCommand(command);
     }
@@ -78,32 +80,34 @@ void loop() {
 }
 
 void powerOnSensor() {
-  Serial.println("Powering Sensor On");
-  if (!sensorPowered) {
-    digitalWrite(POWER_PIN, LOW); // Turn on relay (inverted logic)
-    sensorPowered = true;
+  // Serial.println("Powering Sensor On");
+  // if (!sensorPowered) {
+  //   digitalWrite(POWER_PIN, LOW); // Turn on relay (inverted logic)
+  //   sensorPowered = true;
     
-    // Wait for voltage to stabilize
-    delay(POWER_STABILIZATION_DELAY);
-  }
+  //   // Wait for voltage to stabilize
+  //   delay(POWER_STABILIZATION_DELAY);
+  // }
 }
 
 void powerOffSensor() {
-  Serial.println("Powering Sensor Off");
-  if (sensorPowered) {
-    digitalWrite(POWER_PIN, HIGH); // Turn off relay (inverted logic)
-    sensorPowered = false;
-  }
+  // Serial.println("Powering Sensor Off");
+  // if (sensorPowered) {
+  //   digitalWrite(POWER_PIN, HIGH); // Turn off relay (inverted logic)
+  //   sensorPowered = false;
+  // }
 }
 
-void initializeProbe() {
+bool initializeProbe() {
   // Query probe address
   String response = sendCommandWithResponse("?!");
   if (response.length() > 0) {
     probeAddress = response;
+    return true;
   } else {
     Serial.println("Soil Probe C not detected");
     probeAddress = "C";
+    return false;
   }
   
   delay(1000);
@@ -111,9 +115,9 @@ void initializeProbe() {
 
 void takeMeasurements() {
   // Ensure sensor is powered before measurements
-  if (!sensorPowered) {
-    return;
-  }
+  // if (!sensorPowered) {
+  //   return;
+  // }
   
   // Measure soil moisture with salinity compensation
   measureSoilMoisture();
