@@ -18,7 +18,7 @@ void setup() {
   Wire.begin(); // Initialize I2C as master
   
   // Small delay to let everything initialize
-  delay(500);
+  delay(POWER_STABILIZATION_DELAY);
   
   // Initialize SDI-12 after sensor is powered and stabilized
   mySDI12.begin();
