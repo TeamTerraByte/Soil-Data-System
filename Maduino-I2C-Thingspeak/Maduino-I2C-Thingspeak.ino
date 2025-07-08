@@ -23,7 +23,7 @@
 
 /* ---------- User config -------------------------------------------- */
 #define SLAVE_ADDRESS  0x08           // I²C address of this Maduino
-#define APN            "fast.t-mobile.com" // Carrier APN (example)
+#define APN            "fast.t-mobile.com" // Carrier APN
 /* ------------------------------------------------------------------- */
 
 /* ---------- LTE control pins --------------------------------------- */
@@ -39,6 +39,7 @@ String moistBuf, tempBuf;           // raw CSV segments
 volatile bool assembling = false;   // true while still receiving a block
 volatile bool moistReady = false;   // true when moistBuf holds fresh data
 volatile bool tempReady  = false;   // true when tempBuf  holds fresh data
+String currentDataType = "";
 /* ------------------------------------------------------------------- */
 
 /* ---------- Forward declarations ----------------------------------- */
@@ -52,6 +53,8 @@ void setup() {
   /* Serial ports ----------------------------------------------------- */
   SerialUSB.begin(115200);
   Serial1.begin(115200);            // LTE module on Serial1
+  while (DEBUG && !SerialUSB);  // wait for serial if in DEBUG mode
+
   delay(1000);
   SerialUSB.println(F("Maduino I²C + LTE uploader booting…"));
 
@@ -64,17 +67,14 @@ void setup() {
   Wire.begin(SLAVE_ADDRESS);
   Wire.onReceive(receiveEvent);
 
-  /* Initialise LTE once at power‑up --------------------------------- */
-  ltePowerSequence();
   SerialUSB.println(F("Modem ready – waiting for sensor frames…"));
 }
 
 void loop() {
   /* Only attempt upload when both values are fresh */
   if (moistReady && tempReady && !assembling) {
-    uploadData();
-    /* mark as consumed so the next I²C burst triggers another upload */
     moistReady = tempReady = false;
+    uploadData();
   }
 }
 
@@ -85,23 +85,78 @@ void loop() {
      "Temp,23.45,"  – °C
    You can extend the parser to accept other labels/fields.
    =================================================================== */
+// void receiveEvent(int numBytes) {
+//   assembling = true;
+//   String frame;
+//   while (Wire.available()) {
+//     char c = Wire.read();
+//     frame += c;
+//   }
+
+//   /* Decide which buffer to fill */
+//   if (frame.startsWith("Moist,")) {
+//     moistBuf = frame;
+//     moistReady = true;
+//   } else if (frame.startsWith("Temp,")) {
+//     tempBuf = frame;
+//     tempReady = true;
+//   }
+//   assembling = false;
+// }
+
 void receiveEvent(int numBytes) {
   assembling = true;
-  String frame;
+  String frame = "";
   while (Wire.available()) {
     char c = Wire.read();
     frame += c;
   }
 
-  /* Decide which buffer to fill */
+  // Check if this is the start of a new data transmission
   if (frame.startsWith("Moist,")) {
+    // Start of moisture data
+    currentDataType = "Moist";
     moistBuf = frame;
-    moistReady = true;
-  } else if (frame.startsWith("Temp,")) {
+    SerialUSB.println("Started assembling Moisture data");
+  } 
+  else if (frame.startsWith("Temp,")) {
+    // Start of temperature data
+    currentDataType = "Temp";
     tempBuf = frame;
-    tempReady = true;
+    SerialUSB.println("Started assembling Temperature data");
   }
-  assembling = false;
+  else if (assembling) {
+    // This is a continuation of the current data type
+    if (currentDataType == "Moist") {
+      moistBuf += frame;
+    } else if (currentDataType == "Temp") {
+      tempBuf += frame;
+    }
+    
+    // Check if this appears to be the end of the transmission
+    // (looking for data that ends with a comma followed by few characters or just comma)
+    if (frame.length() < 15) {
+      // This looks like the end of transmission
+      assembling = false;
+      
+      if (currentDataType == "Moist") {
+        SerialUSB.println("=== COMPLETE MOISTURE DATA ===");
+        SerialUSB.println(moistBuf);
+        SerialUSB.println("===============================");
+        // You can process the complete moisture CSV string here
+        moistReady = true;
+      } 
+      else if (currentDataType == "Temp") {
+        SerialUSB.println("=== COMPLETE TEMPERATURE DATA ===");
+        SerialUSB.println(tempBuf);
+        SerialUSB.println("==================================");
+        // You can process the complete temperature CSV string here
+        tempReady = true;
+      }
+      
+      currentDataType = "";
+    }
+  }
 }
 
 /* ===================================================================
@@ -114,27 +169,23 @@ void ltePowerSequence() {
   delay(2000);
   digitalWrite(LTE_RESET_PIN, LOW);
 
-  /* PWRKEY pulse – turns the module on -------------------------------- */
+  
   delay(100);
   digitalWrite(LTE_PWRKEY_PIN, HIGH);
   delay(2000);
   digitalWrite(LTE_PWRKEY_PIN, LOW);
 
-  /* Ensure RF is enabled ------------------------------------------- */
-  digitalWrite(LTE_FLIGHT_PIN, LOW);
+  digitalWrite(LTE_FLIGHT_PIN, LOW); // Normal mode
 
-  /* Give modem time to boot & register ----------------------------- */
-  delay(30000);
+  delay(30000); // Wait for LTE module
 
-  /* Basic sanity ATs ---------------------------------------------- */
-  sendAT("AT", 1000);
-  sendAT("ATE0", 1000);                 // echo off
-  sendAT("AT+CMEE=2", 1000);            // verbose errors
-  sendAT("AT+CPIN?", 3000);             // SIM ready?
-  sendAT("AT+CGATT=1", 5000);           // force packet attach
-  sendAT("AT+CGDCONT=1,\"IP\",\"" + String(APN) + "\"", 3000);
-  sendAT("AT+CGACT=1,1", 5000);         // activate PDP context 1
-  sendAT("AT+CGPADDR=1", 3000);
+  // LTE network setup
+  sendAT("AT+CCID", 3000);
+  sendAT("AT+CREG?", 3000);
+  sendAT("AT+CGATT=1", 1000);
+  sendAT("AT+CGACT=1,1", 1000);
+  sendAT("AT+CGDCONT=1,\"IP\",\"fast.t-mobile.com\"", 1000);
+  sendAT("AT+CGPADDR=1", 3000);          // show pdp address
 }
 
 /* ===================================================================
@@ -146,6 +197,8 @@ void uploadData() {
   /* ---- Extract numeric part (strip label & trailing comma) -------- */
   String moistVal = moistBuf.substring(6);   // after "Moist,"
   String tempVal  = tempBuf.substring(5);    // after "Temp,"
+  moistVal.replace("\n", "");
+  tempVal.replace("\n", "");
 
   if (moistVal.endsWith(",")) moistVal.remove(moistVal.length() - 1);
   if (tempVal.endsWith(","))  tempVal.remove(tempVal.length()  - 1);
@@ -176,6 +229,9 @@ void uploadData() {
     SerialUSB.println("Upload failed: " + resp);
   }
   sendAT("AT+HTTPTERM", 1000);
+  
+  moistBuf = ""; // Clear for next transmission
+  tempBuf = ""; // Clear for next transmission
 }
 
 /* ===================================================================
