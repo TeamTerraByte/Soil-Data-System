@@ -17,16 +17,8 @@ void setup() {
   Serial.begin(9600);
   Wire.begin(); // Initialize I2C as master
   
-  // Configure power control pin
-  // pinMode(POWER_PIN, OUTPUT);
-  // digitalWrite(POWER_PIN, HIGH); // Start with sensor powered off (relay logic inverted)
-  // sensorPowered = false;
-  
   // Small delay to let everything initialize
   delay(500);
-  
-  // Power on sensor and initialize
-  // powerOnSensor();
   
   // Initialize SDI-12 after sensor is powered and stabilized
   mySDI12.begin();
@@ -39,26 +31,18 @@ void setup() {
   // Take first measurement immediately
   takeMeasurements();
   lastMeasurement = millis();
-  
-  // Power off sensor after first measurement
-  // powerOffSensor();
 }
 
 void loop() {
   // Check if it's time for next measurement
   if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
-    // Power on sensor before measurement
-    // powerOnSensor();
-    
+
     // Re-initialize SDI-12 communication
     mySDI12.begin();
     
     // Take measurements
     takeMeasurements();
     lastMeasurement = millis();
-    
-    // Power off sensor after measurement to save power
-    // powerOffSensor();
   }
   
   // Check for manual commands from Serial Monitor
@@ -66,45 +50,19 @@ void loop() {
     String command = Serial.readStringUntil('\n');
     command.trim();
     if (command.length() > 0) {
-      // Power on sensor for manual commands
-      // if (!sensorPowered) {
-      //   // powerOnSensor();
-      //   mySDI12.begin();
-      // }
       
       sendCommand(command);
     }
-  }
-  
-  while(!initializeProbe()) {
-    delay(1000);
   }
 
   delay(100); // Small delay to prevent overwhelming the system
 }
 
-void powerOnSensor() {
-  // Serial.println("Powering Sensor On");
-  // if (!sensorPowered) {
-  //   digitalWrite(POWER_PIN, LOW); // Turn on relay (inverted logic)
-  //   sensorPowered = true;
-    
-  //   // Wait for voltage to stabilize
-  //   delay(POWER_STABILIZATION_DELAY);
-  // }
-}
 
-void powerOffSensor() {
-  // Serial.println("Powering Sensor Off");
-  // if (sensorPowered) {
-  //   digitalWrite(POWER_PIN, HIGH); // Turn off relay (inverted logic)
-  //   sensorPowered = false;
-  // }
-}
 
 bool initializeProbe() {
   // Query probe address
-  String response = sendCommandWithResponse("?!");
+  String response = sendCommand("?!");
   if (response.length() > 0) {
     probeAddress = response;
     return true;
@@ -118,11 +76,6 @@ bool initializeProbe() {
 }
 
 void takeMeasurements() {
-  // Ensure sensor is powered before measurements
-  // if (!sensorPowered) {
-  //   return;
-  // }
-  
   // Measure soil moisture with salinity compensation
   measureSoilMoisture();
   
@@ -135,7 +88,7 @@ void takeMeasurements() {
 void measureSoilMoisture() {
   // Send measurement command (C0 = moisture with salinity compensation)
   String measureCommand = probeAddress + "C0!";
-  String response = sendCommandWithResponse(measureCommand);
+  String response = sendCommand(measureCommand);
   
   if (response.length() > 0) {
     // Parse timing from response (format: TTTNNN where TTT is time, NNN is number of values)
@@ -150,7 +103,7 @@ void measureSoilMoisture() {
     
     // Request data
     String dataCommand = probeAddress + "D0!";
-    String dataResponse = sendCommandWithResponse(dataCommand);
+    String dataResponse = sendCommand(dataCommand);
     
     if (dataResponse.length() > 0) {
       parseMoistureData(dataResponse);
@@ -161,7 +114,7 @@ void measureSoilMoisture() {
 void measureTemperature() {
   // Send measurement command (C2 = temperature in Celsius)
   String measureCommand = probeAddress + "C2!";
-  String response = sendCommandWithResponse(measureCommand);
+  String response = sendCommand(measureCommand);
   
   if (response.length() > 0) {
     // Wait for measurement to complete
@@ -175,7 +128,7 @@ void measureTemperature() {
     
     // Request data
     String dataCommand = probeAddress + "D0!";
-    String dataResponse = sendCommandWithResponse(dataCommand);
+    String dataResponse = sendCommand(dataCommand);
     
     if (dataResponse.length() > 0) {
       parseTemperatureData(dataResponse);
@@ -312,7 +265,7 @@ void transmitI2C(String data) {
   }
 }
 
-String sendCommandWithResponse(String command) {
+String sendCommand(String command) {
   mySDI12.sendCommand(command);
   
   // Wait for response with timeout
@@ -335,8 +288,4 @@ String sendCommandWithResponse(String command) {
   }
   
   return response;
-}
-
-void sendCommand(String command) {
-  sendCommandWithResponse(command);
 }
