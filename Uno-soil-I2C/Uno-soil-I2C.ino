@@ -9,7 +9,7 @@ SDI12 mySDI12(DATA_PIN);
 
 String probeAddress = "C";  // Default probe address
 unsigned long lastMeasurement = 0;
-const unsigned long MEASUREMENT_INTERVAL = 30000; // 30 seconds
+const unsigned long MEASUREMENT_INTERVAL = 10000; // 10 seconds
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds for voltage stabilization
 // bool sensorPowered = false;
 

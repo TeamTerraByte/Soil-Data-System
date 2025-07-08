@@ -42,7 +42,7 @@ void loop() {
 
   // Send to ThingSpeak
   sendData("AT+HTTPINIT", 2000, DEBUG);
-  String http_str = "AT+HTTPPARA=\"URL\",\"http://api.thingspeak.com/update?api_key=" + Apikey + "&field1=" + String((int)420) + "\"";
+  String http_str = "AT+HTTPPARA=\"URL\",\"http://api.thingspeak.com/update?api_key=" + Apikey + "&field1=" + String((int)69420) + "\"";
   sendData(http_str, 2000, DEBUG);
   sendData("AT+HTTPPARA=\"CONTENT\",\"application/x-www-form-urlencoded\"", 1000, DEBUG);
   sendData("AT+HTTPACTION=0", 30000, DEBUG);
