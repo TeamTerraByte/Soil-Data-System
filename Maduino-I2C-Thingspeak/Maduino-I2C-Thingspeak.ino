@@ -19,7 +19,6 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include "secrets.h"
 
 /* ---------- User config -------------------------------------------- */
 #define SLAVE_ADDRESS  0x08           // I²C address of this Maduino
@@ -81,29 +80,9 @@ void loop() {
 /* ===================================================================
    I²C receive ISR – builds a String from incoming bytes
    Format expected from master (examples):
-     "Moist,550,"   – soil moisture raw ADC or percent
+     "Moist,550,"   – soil moisture percent
      "Temp,23.45,"  – °C
-   You can extend the parser to accept other labels/fields.
    =================================================================== */
-// void receiveEvent(int numBytes) {
-//   assembling = true;
-//   String frame;
-//   while (Wire.available()) {
-//     char c = Wire.read();
-//     frame += c;
-//   }
-
-//   /* Decide which buffer to fill */
-//   if (frame.startsWith("Moist,")) {
-//     moistBuf = frame;
-//     moistReady = true;
-//   } else if (frame.startsWith("Temp,")) {
-//     tempBuf = frame;
-//     tempReady = true;
-//   }
-//   assembling = false;
-// }
-
 void receiveEvent(int numBytes) {
   assembling = true;
   String frame = "";
@@ -117,12 +96,14 @@ void receiveEvent(int numBytes) {
     // Start of moisture data
     currentDataType = "Moist";
     moistBuf = frame;
+    moistReady = false;
     SerialUSB.println("Started assembling Moisture data");
   } 
   else if (frame.startsWith("Temp,")) {
     // Start of temperature data
     currentDataType = "Temp";
     tempBuf = frame;
+    tempReady = false;
     SerialUSB.println("Started assembling Temperature data");
   }
   else if (assembling) {
@@ -192,21 +173,29 @@ void ltePowerSequence() {
    Upload the latest buffered readings to ThingSpeak via HTTP GET
    =================================================================== */
 void uploadData() {
-  ltePowerSequence();
+  moistBuf.replace("\n", "");
+  moistBuf.replace("\r", "");
+  tempBuf.replace("\n", "");
+  tempBuf.replace("\r", "");
+
+  if (moistBuf.length() == 0 || tempBuf.length() ==0){
+    SerialUSB.println("! Upload cancelled, moistBuf or tempBuf empty");
+    return;  // I'm not sure how I'm uploading empty buffers
+  }
+
+  // For some reason, I have only observed consistent success using HTTP
+  // if I reset LTE before every query
+  ltePowerSequence(); 
 
   /* ---- Extract numeric part (strip label & trailing comma) -------- */
   String moistVal = moistBuf.substring(6);   // after "Moist,"
   String tempVal  = tempBuf.substring(5);    // after "Temp,"
-  moistVal.replace("\n", "");
-  tempVal.replace("\n", "");
 
   if (moistVal.endsWith(",")) moistVal.remove(moistVal.length() - 1);
   if (tempVal.endsWith(","))  tempVal.remove(tempVal.length()  - 1);
 
   /* ---- Build ThingSpeak URL -------------------------------------- */
-  String url = "http://api.thingspeak.com/update?api_key=";
-  url += API_WRITE_KEY;
-  url += "&field1=" + moistVal + "&field2=" + tempVal;
+  String url = "http://api.thingspeak.com/update?api_key=790NQTTP1GOCK98V&field1=25-07-10&field2=12:38:20&field3=0.000000,0.000000,0.0&field4=+019.28,+019.45,+019.57,+019.71,+019.31,+019.44,+020.00,+020.15&field5=+002.44,+002.96,+000.98,+001.23,+001.27,+001.53,+002.44,+002.91&field6=0.0,0.0";
 
   SerialUSB.println("\n[HTTP] » " + url);
 

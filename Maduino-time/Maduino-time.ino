@@ -32,7 +32,37 @@ void setup() {
 }
 
 void loop() {
-    getTime();
+    String time = getTime();
+    uint16_t yr = time.substring(0,2).toInt();
+    uint8_t  mon = time.substring(3,5).toInt();
+    uint8_t  day = time.substring(6,8).toInt();
+    uint8_t  hr = time.substring(9,11).toInt();
+    uint8_t  min = time.substring(12,14).toInt();
+    uint8_t  sec = time.substring(15,17).toInt();
+    // --- Diagnostic output for parsed timestamp ---------------------------
+    SerialUSB.println(F("\n===== Parsed Timestamp Components ====="));
+    SerialUSB.println("Raw time string: " + time);
+
+    SerialUSB.print(F("Year: "));
+    SerialUSB.println(yr);
+
+    SerialUSB.print(F("Month: "));
+    SerialUSB.println(mon);
+
+    SerialUSB.print(F("Day: "));
+    SerialUSB.println(day);
+
+    SerialUSB.print(F("Hour: "));
+    SerialUSB.println(hr);
+
+    SerialUSB.print(F("Minute: "));
+    SerialUSB.println(min);
+
+    SerialUSB.print(F("Second: "));
+    SerialUSB.println(sec);
+    SerialUSB.println(F("========================================\n"));
+
+
     delay(1000);
     if (SerialUSB.available()) {
         String command = SerialUSB.readStringUntil('\n');
