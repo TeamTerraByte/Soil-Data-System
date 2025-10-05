@@ -1,52 +1,47 @@
 /*
-  Post lines from Serial to ThingSpeak via HTTP (no TLS)
+  Fast-first-send: Post lines to ThingSpeak via HTTP (no TLS)
   Hardware: SparkFun LTE Cat M1/NB-IoT Shield (u-blox SARA-R4/R410) + Arduino Uno
-  Behavior:
-  - Open Serial Monitor @ 9600 baud, "Newline" EOL
-  - Each line you type is posted to ThingSpeak:
-      * status=<entire line>
-      * if the line parses as a number, also field1=<number>
 
-  Notes:
-  - Uses HTTP on port 80 (avoids TLS/private AT calls).
-  - Retries socket open, splits HTTP write (headers/body), and falls back to GET on failure.
+  Strategy:
+  - Warm up PDP/DNS during setup() using a tiny HEAD request.
+  - When you press Enter, do a single fast socket open/connect and send.
 */
 
-// Library Manager: http://librarymanager/All#SparkFun_LTE_Shield_Arduino_Library
 #include <SparkFun_LTE_Shield_Arduino_Library.h>
 #include <SoftwareSerial.h>
-#include <ctype.h>   // isspace
-#include <stdlib.h>  // atof
+#include <ctype.h>
+#include <stdlib.h>
 #include "secrets.h" // defines: API_WRITE_KEY
 
 // ---------- Config ----------
 const char THINGSPEAK_HOST[] = "api.thingspeak.com";
-const int  THINGSPEAK_PORT   = 80;                // HTTP
+const int  THINGSPEAK_PORT   = 80;
 const char THINGSPEAK_PATH[] = "/update.json";
+const char * THINGSPEAK_API_KEY = API_WRITE_KEY;
 
-// ThingSpeak WRITE API KEY
-const char * THINGSPEAK_API_KEY = API_WRITE_KEY;  // from secrets.h
+// APN (T-Mobile USA)
+const char APN[] = "fast.t-mobile.com";
 
-// Correct APN for T-Mobile USA
-const char APN[] = "fast.t-mobile.com"; // <- was misspelled before
+// Warmup aggressiveness (during setup)
+const uint8_t PREFLIGHT_ATTEMPTS   = 8;    // try up to ~8 quick warmups at boot
+const uint16_t PREFLIGHT_DELAY_MS  = 500;  // short pause between tries
 // ----------------------------
 
-SoftwareSerial lteSerial(8, 9); // Arduino pins to LTE shield UART (RX=8, TX=9)
+SoftwareSerial lteSerial(8, 9);
 LTE_Shield lte;
 
-// ---------- Forward Declarations ----------
 static String urlEncode(const String& s);
 static bool   tryParseFloat(const String& s, float& outVal);
-static int    openSocketWithRetry(uint8_t attempts, uint16_t delayMs);
+static int    openSocketOnce(void);
 static bool   writeAllHTTP(int socket, const String& headers, const String& body);
 static bool   postThingSpeak(const String& input);
 static bool   getThingSpeakFallback(const String& input);
 static void   postToThingSpeak(const String& input);
-// -----------------------------------------
+static bool   warmUpDataPath(void);
 
 void setup() {
   Serial.begin(9600);
-  while (!Serial) { /* wait for native USB boards; harmless on Uno */ }
+  while (!Serial) {}
 
   if (lte.begin(lteSerial, 9600)) {
     Serial.println(F("LTE Shield connected!"));
@@ -54,9 +49,18 @@ void setup() {
     Serial.println(F("ERROR: LTE Shield not responding."));
   }
 
-  // Optional APN hint (correct signature for this library)
   LTE_Shield_error_t apnErr = lte.setAPN(String(APN));
   Serial.print(F("APN set attempt: ")); Serial.println((int)apnErr);
+
+  // ---------- Warm up PDP/DNS so first user send is fast ----------
+  Serial.println(F("Warming up data path..."));
+  bool warmed = false;
+  for (uint8_t i = 0; i < PREFLIGHT_ATTEMPTS; i++) {
+    if (warmUpDataPath()) { warmed = true; break; }
+    unsigned long t0 = millis();
+    while (millis() - t0 < PREFLIGHT_DELAY_MS) { lte.poll(); delay(10); }
+  }
+  Serial.println(warmed ? F("Data path warm.") : F("Warmup skipped/partial; proceeding."));
 
   Serial.println(F("Type a message. Send a Newline (\\n) to POST to ThingSpeak..."));
   Serial.println(F("If numeric, it will go into field1; full text always goes into 'status'."));
@@ -80,45 +84,39 @@ void loop() {
   lte.poll();
 }
 
-// Minimal URL encoder (ASCII-safe)
+// ================= Helpers =================
+
 static String urlEncode(const String& s) {
-  String out;
-  out.reserve(s.length() * 3);
+  String out; out.reserve(s.length() * 3);
   const char *hex = "0123456789ABCDEF";
   for (size_t i = 0; i < s.length(); i++) {
     char c = s.charAt(i);
-    if (('a' <= c && c <= 'z') ||
-        ('A' <= c && c <= 'Z') ||
-        ('0' <= c && c <= '9') ||
-        c == '-' || c == '_' || c == '.' || c == '~') {
+    if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') ||
+        ('0' <= c && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
       out += c;
     } else if (c == ' ') {
       out += '+';
     } else {
-      out += '%';
-      out += hex[(c >> 4) & 0x0F];
-      out += hex[c & 0x0F];
+      out += '%'; out += hex[(c >> 4) & 0x0F]; out += hex[c & 0x0F];
     }
   }
   return out;
 }
 
-// AVR-safe numeric parse using atof (strtof not available in avr-libc)
 static bool tryParseFloat(const String& s, float& outVal) {
   char buf[64];
   size_t n = s.length();
   if (n >= sizeof(buf)) return false;
   s.toCharArray(buf, sizeof(buf));
 
-  outVal = atof(buf); // on AVR, double == float (4 bytes)
+  outVal = atof(buf); // on AVR, double == float
 
   if (outVal == 0.0f) {
     bool seenDigitOrDot = false;
     for (size_t i = 0; i < n; i++) {
       char ch = buf[i];
       if (ch == '\0') break;
-      if (ch == '0' || ch == '.' || ch == '+' || ch == '-' ||
-          isspace((unsigned char)ch)) {
+      if (ch == '0' || ch == '.' || ch == '+' || ch == '-' || isspace((unsigned char)ch)) {
         if (ch == '0' || ch == '.') seenDigitOrDot = true;
         continue;
       }
@@ -129,86 +127,86 @@ static bool tryParseFloat(const String& s, float& outVal) {
   return true;
 }
 
-// Try to open a socket a few times (gives the modem time to attach/activate PDP)
-static int openSocketWithRetry(uint8_t attempts, uint16_t delayMs) {
-  for (uint8_t i = 0; i < attempts; i++) {
-    int s = lte.socketOpen(LTE_SHIELD_TCP);
-    if (s >= 0) return s;
-    Serial.println(F("socketOpen failed; retrying..."));
-    unsigned long t0 = millis();
-    while (millis() - t0 < delayMs) {
-      lte.poll();
-      delay(10);
-    }
-  }
-  return -1;
+// Single, fast socket open
+static int openSocketOnce(void) {
+  int s = lte.socketOpen(LTE_SHIELD_TCP);
+  return s; // <0 means not ready yet
 }
 
-// Write headers and body in two separate writes; small waits in between
+// Split headers/body writes with tiny settles
 static bool writeAllHTTP(int socket, const String& headers, const String& body) {
-  if (lte.socketWrite(socket, headers) != LTE_SHIELD_SUCCESS) {
-    Serial.println(F("ERROR: socketWrite(headers) failed"));
-    return false;
-  }
-  // brief settle
-  unsigned long t0 = millis();
-  while (millis() - t0 < 100) { lte.poll(); }
-
-  if (lte.socketWrite(socket, body) != LTE_SHIELD_SUCCESS) {
-    Serial.println(F("ERROR: socketWrite(body) failed"));
-    return false;
-  }
+  if (lte.socketWrite(socket, headers) != LTE_SHIELD_SUCCESS) return false;
+  unsigned long t0 = millis(); while (millis() - t0 < 20) { lte.poll(); } // ~20ms
+  if (lte.socketWrite(socket, body) != LTE_SHIELD_SUCCESS)   return false;
   return true;
 }
 
-// Build and send POST; returns true on success
-static bool postThingSpeak(const String& input) {
-  // Prepare body as application/x-www-form-urlencoded
-  String body;
-  body.reserve(128 + input.length());
-  body = "api_key=" + String(THINGSPEAK_API_KEY);
+// Pre-flight: HEAD / to warm up DNS/PDP
+static bool warmUpDataPath(void) {
+  int s = openSocketOnce();
+  if (s < 0) return false;
 
-  float numericVal = 0.0f;
-  if (tryParseFloat(input, numericVal)) {
-    body += "&field1=" + String(numericVal, 6); // up to 6 dp
+  if (lte.socketConnect(s, THINGSPEAK_HOST, THINGSPEAK_PORT) != LTE_SHIELD_SUCCESS) {
+    lte.socketClose(s);
+    return false;
   }
+
+  String headReq;
+  headReq.reserve(128);
+  headReq  = "HEAD / HTTP/1.1\r\n";
+  headReq += "Host: " + String(THINGSPEAK_HOST) + "\r\n";
+  headReq += "Connection: close\r\n\r\n";
+
+  bool ok = (lte.socketWrite(s, headReq) == LTE_SHIELD_SUCCESS);
+
+  // brief settle
+  unsigned long t1 = millis(); while (millis() - t1 < 40) { lte.poll(); }
+
+  lte.socketClose(s);
+  return ok;
+}
+
+// Build and send POST; single fast attempt
+static bool postThingSpeak(const String& input) {
+  // Body
+  String body; body.reserve(128 + input.length());
+  body  = "api_key=" + String(THINGSPEAK_API_KEY);
+  float v=0.0f; if (tryParseFloat(input, v)) body += "&field1=" + String(v, 6);
   body += "&status=" + urlEncode(input);
 
-  String headers;
-  headers.reserve(256);
+  // Headers
+  String headers; headers.reserve(256);
   headers  = "POST " + String(THINGSPEAK_PATH) + " HTTP/1.1\r\n";
   headers += "Host: " + String(THINGSPEAK_HOST) + "\r\n";
   headers += "User-Agent: SparkFun-LTE-Arduino\r\n";
   headers += "Connection: close\r\n";
   headers += "Content-Type: application/x-www-form-urlencoded\r\n";
-  headers += "Content-Length: " + String(body.length()) + "\r\n";
-  headers += "\r\n";
+  headers += "Content-Length: " + String(body.length()) + "\r\n\r\n";
 
-  int socket = openSocketWithRetry(8, 1500); // ~12s max
-  if (socket < 0) {
-    Serial.println(F("ERROR: socketOpen failed after retries"));
+  // One fast try
+  int s = openSocketOnce();
+  if (s < 0) {
+    // quick one-time re-warm attempt then retry once
+    warmUpDataPath();
+    s = openSocketOnce();
+    if (s < 0) return false;
+  }
+
+  if (lte.socketConnect(s, THINGSPEAK_HOST, THINGSPEAK_PORT) != LTE_SHIELD_SUCCESS) {
+    lte.socketClose(s);
     return false;
   }
 
-  Serial.println("Connecting socket " + String(socket) + " to " + String(THINGSPEAK_HOST) + ":" + String(THINGSPEAK_PORT));
-  if (lte.socketConnect(socket, THINGSPEAK_HOST, THINGSPEAK_PORT) != LTE_SHIELD_SUCCESS) {
-    Serial.println(F("ERROR: socketConnect failed"));
-    lte.socketClose(socket);
-    return false;
-  }
+  // tiny settle after connect
+  unsigned long tc = millis(); while (millis() - tc < 30) { lte.poll(); }
 
-  // small wait after connect (some firmware needs it)
-  unsigned long t1 = millis();
-  while (millis() - t1 < 150) { lte.poll(); }
+  bool ok = writeAllHTTP(s, headers, body);
 
-  bool ok = writeAllHTTP(socket, headers, body);
+  // short settle window
+  unsigned long t2 = millis(); while (millis() - t2 < 60) { lte.poll(); }
 
-  // Optional: quick settle/read window (not strictly required)
-  unsigned long t2 = millis();
-  while (millis() - t2 < 300) { lte.poll(); }
-
-  if (lte.socketClose(socket) == LTE_SHIELD_SUCCESS) {
-    Serial.println("Socket " + String(socket) + " closed");
+  if (lte.socketClose(s) == LTE_SHIELD_SUCCESS) {
+    Serial.println("Socket " + String(s) + " closed");
   } else {
     Serial.println(F("WARN: socketClose failed"));
   }
@@ -216,59 +214,41 @@ static bool postThingSpeak(const String& input) {
   return ok;
 }
 
-// Super-compact fallback using GET (tiny request)
+// Tiny GET fallback (rarely needed after warmup)
 static bool getThingSpeakFallback(const String& input) {
-  // Build GET /update?api_key=...&field1=...&status=...
   String qs = "api_key=" + String(THINGSPEAK_API_KEY);
-  float numericVal = 0.0f;
-  if (tryParseFloat(input, numericVal)) {
-    qs += "&field1=" + String(numericVal, 6);
-  }
+  float v=0.0f; if (tryParseFloat(input, v)) qs += "&field1=" + String(v, 6);
   qs += "&status=" + urlEncode(input);
 
-  String request;
-  request.reserve(128 + qs.length());
-  request  = "GET /update?" + qs + " HTTP/1.1\r\n";
-  request += "Host: " + String(THINGSPEAK_HOST) + "\r\n";
-  request += "User-Agent: SparkFun-LTE-Arduino\r\n";
-  request += "Connection: close\r\n";
-  request += "\r\n";
+  String req; req.reserve(128 + qs.length());
+  req  = "GET /update?" + qs + " HTTP/1.1\r\n";
+  req += "Host: " + String(THINGSPEAK_HOST) + "\r\n";
+  req += "User-Agent: SparkFun-LTE-Arduino\r\n";
+  req += "Connection: close\r\n\r\n";
 
-  int socket = openSocketWithRetry(6, 1200);
-  if (socket < 0) {
-    Serial.println(F("ERROR: socketOpen (GET) failed after retries"));
+  int s = openSocketOnce();
+  if (s < 0) {
+    warmUpDataPath();
+    s = openSocketOnce();
+    if (s < 0) return false;
+  }
+
+  if (lte.socketConnect(s, THINGSPEAK_HOST, THINGSPEAK_PORT) != LTE_SHIELD_SUCCESS) {
+    lte.socketClose(s);
     return false;
   }
 
-  Serial.println("Connecting socket " + String(socket) + " (GET) to " + String(THINGSPEAK_HOST) + ":" + String(THINGSPEAK_PORT));
-  if (lte.socketConnect(socket, THINGSPEAK_HOST, THINGSPEAK_PORT) != LTE_SHIELD_SUCCESS) {
-    Serial.println(F("ERROR: socketConnect (GET) failed"));
-    lte.socketClose(socket);
-    return false;
-  }
+  unsigned long tc = millis(); while (millis() - tc < 20) { lte.poll(); }
+  bool ok = (lte.socketWrite(s, req) == LTE_SHIELD_SUCCESS);
+  unsigned long t2 = millis(); while (millis() - t2 < 40) { lte.poll(); }
 
-  // brief settle
-  unsigned long t1 = millis();
-  while (millis() - t1 < 120) { lte.poll(); }
-
-  bool ok = (lte.socketWrite(socket, request) == LTE_SHIELD_SUCCESS);
-  if (!ok) Serial.println(F("ERROR: socketWrite(GET) failed"));
-
-  unsigned long t2 = millis();
-  while (millis() - t2 < 300) { lte.poll(); }
-
-  if (lte.socketClose(socket) == LTE_SHIELD_SUCCESS) {
-    Serial.println("Socket " + String(socket) + " closed (GET)");
-  } else {
-    Serial.println(F("WARN: socketClose (GET) failed"));
-  }
-
+  lte.socketClose(s);
   return ok;
 }
 
 static void postToThingSpeak(const String& input) {
   if (postThingSpeak(input)) {
-    Serial.println(F("POST sent (check ThingSpeak for entry; may rate-limit)."));
+    Serial.println(F("POST sent (check ThingSpeak; free tier has rate limits)."));
     return;
   }
   Serial.println(F("POST failed; trying GET fallback..."));
