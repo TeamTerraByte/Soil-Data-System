@@ -45,7 +45,7 @@ void loop() {
   String http_str = "AT+HTTPPARA=\"URL\",\"http://api.thingspeak.com/update?api_key=" + Apikey + "&field1=" + String((int)69420) + "\"";
   sendData(http_str, 2000, DEBUG);
   sendData("AT+HTTPPARA=\"CONTENT\",\"application/x-www-form-urlencoded\"", 1000, DEBUG);
-  sendData("AT+HTTPACTION=0", 30000, DEBUG);
+  sendData("AT+HTTPACTION=0", 30000, DEBUG);  //TODO: look into decreasing this timeout
   sendData("AT+HTTPTERM", 3000, DEBUG);
 
   delay(15000);
@@ -82,7 +82,7 @@ void ltePowerSequence(){
   pinMode(LTE_FLIGHT_PIN, OUTPUT);
   digitalWrite(LTE_FLIGHT_PIN, LOW); // Normal mode
 
-  delay(30000); // Wait for LTE module
+  delay(30000); // Wait for LTE module  TODO: Look into decreasing this delay
 
   // LTE network setup
   sendData("AT+CCID", 3000, DEBUG);
