@@ -1,4 +1,9 @@
 #include <SDI12.h>
+#include <SoftwareSerial.h>
+
+static const uint8_t UNO_RX = 10;
+static const uint8_t UNO_TX = 11; 
+SoftwareSerial meshSerial(UNO_RX, UNO_TX); // RX, TX
 
 #define SOIL_SENSOR_PIN 2
 SDI12 enviroPro(SOIL_SENSOR_PIN);
@@ -11,6 +16,7 @@ const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds for voltage s
 
 void setup() {
   Serial.begin(9600);
+  meshSerial.begin(38400);
   delay(POWER_STABILIZATION_DELAY);
 
   // Initialize SDI-12 after sensor is powered and stabilized
@@ -29,7 +35,7 @@ void loop() {
   if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
 
     // Re-initialize SDI-12 communication
-    mySDI12.begin();
+    enviroPro.begin();
     
     // Take measurements
     takeMeasurements();
@@ -47,6 +53,14 @@ void loop() {
   }
 
   delay(100); // Small delay to prevent overwhelming the system
+}
+
+void sendMesh(const String& s) {
+  // In TEXTMSG mode, a newline-terminated line is a message.
+  meshSerial.print(s);
+  meshSerial.print('\n');
+  Serial.print(F("Sent: "));
+  Serial.println(s);
 }
 
 bool initializeProbe() {
@@ -168,6 +182,7 @@ void parseMoistureData(String data) {
   Serial.println(); // End the CSV line
   
   // TODO: transmit data over UART to Meshtastic
+  sendMesh(outputData);
 }
 
 void parseTemperatureData(String data) {
@@ -213,10 +228,11 @@ void parseTemperatureData(String data) {
   Serial.println(); // End the CSV line
   
   // TODO: transmit data over UART to Meshtastic
+  sendMesh(outputData);
 }
 
 String sendCommand(String command) {
-  mySDI12.sendCommand(command);
+  enviroPro.sendCommand(command);
   
   // Wait for response with timeout
   String response = "";
@@ -224,8 +240,8 @@ String sendCommand(String command) {
   const unsigned long timeout = 2000; // 2 second timeout
   
   while (millis() - startTime < timeout) {
-    if (mySDI12.available()) {
-      char c = mySDI12.read();
+    if (enviroPro.available()) {
+      char c = enviroPro.read();
       if (c == '\n' || c == '\r') {
         if (response.length() > 0) {
           return response;

@@ -1,0 +1,1 @@
+meshtastic --set serial.enabled true --set serial.mode TEXTMSG --set serial.baud 38400 --set serial.txd 43 --set serial.rxd 44  
