@@ -1,10 +1,14 @@
 #include <SDI12.h>
-#include <AltSoftSerial.h>       // ADD
 
-// AltSoftSerial on Uno uses fixed pins: RX=8, TX=9
-AltSoftSerial meshSerial;        // no pin arguments
+// --- Mega 2560 UART mapping ---
+// Serial  : USB (pins 0/1) - debug
+// Serial1 : TX1=18, RX1=19 - mesh
+// Serial2 : TX2=16, RX2=17 - LTE
+// Serial3 : TX3=14, RX3=15 - (free)
 
-#define SOIL_SENSOR_PIN 2
+#define meshSerial Serial1
+
+#define SOIL_SENSOR_PIN 53
 SDI12 enviroPro(SOIL_SENSOR_PIN);
 
 String probeAddress = "C";
@@ -14,7 +18,6 @@ const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds
 
 // ==== LTE Shield + ThingSpeak (TCP/HTTP) integration ====
 #include <SparkFun_LTE_Shield_Arduino_Library.h>
-#include <SoftwareSerial.h>
 #include "secrets.h"   // must define API_WRITE_KEY
 
 // ThingSpeak config
@@ -30,8 +33,8 @@ static const char APN[] = "fast.t-mobile.com";
 static const uint8_t  PREFLIGHT_ATTEMPTS  = 4;
 static const uint16_t PREFLIGHT_DELAY_MS  = 500;
 
-// LTE shield uses pins 8 (TX) and 9 (RX)
-static SoftwareSerial lteSerial(8, 9);
+// Use hardware UART for LTE on Mega (no SoftwareSerial)
+#define lteSerial Serial2
 static LTE_Shield lte;
 
 // Forward decls
@@ -56,17 +59,17 @@ static void sendToThingSpeak(const String& line) {
 // =========================================================
 
 void setup() {
-  Serial.begin(9600);
-  meshSerial.begin(38400);   // Mesh on D8/D9 via AltSoftSerial
+  Serial.begin(9600);          // USB debug
+  meshSerial.begin(38400);     // Mesh on Serial1 (pins 18/19)
+  lteSerial.begin(9600);       // LTE on Serial2 (pins 16/17)
   delay(POWER_STABILIZATION_DELAY);
 
   enviroPro.begin();
-  while(!initializeProbe()) {
+  while (!initializeProbe()) {
     delay(1000);
   }
 
   // ---- LTE shield init (ThingSpeak TCP/HTTP) ----
-  lteSerial.begin(9600);
   if (lte.begin(lteSerial, 9600)) {
     Serial.println(F("LTE Shield connected!"));
   } else {
