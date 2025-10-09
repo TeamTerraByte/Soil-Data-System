@@ -150,8 +150,7 @@ void parseMoistureData(String data) {
   }
   Serial.println();
 
-  // TODO: Upload to thingspeak
-  // sendMesh(outputData);
+  // TODO: Upload outputData to thingspeak
 }
 
 void parseTemperatureData(String data) {
@@ -193,8 +192,7 @@ void parseTemperatureData(String data) {
   }
   Serial.println();
 
-  // TODO: Send data to Thingspeak
-  // sendMesh(outputData);
+  // TODO: Send outputData to Thingspeak
 }
 
 String sendCommand(String command) {
