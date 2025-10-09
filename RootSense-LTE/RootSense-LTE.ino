@@ -1,5 +1,5 @@
 #include <SDI12.h>
-#include <AltSoftSerial.h>      
+#include <AltSoftSerial.h>       // ADD
 
 // AltSoftSerial on Uno uses fixed pins: RX=8, TX=9
 AltSoftSerial meshSerial;        // no pin arguments
@@ -149,7 +149,9 @@ void parseMoistureData(String data) {
     }
   }
   Serial.println();
-  sendMesh(outputData);
+
+  // TODO: Upload to thingspeak
+  // sendMesh(outputData);
 }
 
 void parseTemperatureData(String data) {
@@ -190,7 +192,9 @@ void parseTemperatureData(String data) {
     }
   }
   Serial.println();
-  sendMesh(outputData);
+
+  // TODO: Send data to Thingspeak
+  // sendMesh(outputData);
 }
 
 String sendCommand(String command) {
