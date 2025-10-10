@@ -16,71 +16,65 @@ void     enableTimeUpdates();
 /* ====== TYPES ====== */
 class DateTime {
 public:
-  String   timeStr;        // Raw "YY/MM/DD,HH:MM:SS" (no TZ tail)
-  uint16_t yr   = 0;       // 0..99 (module returns 2-digit year)
-  uint8_t  mon  = 0;
-  uint8_t  day  = 0;
-  uint8_t  hr   = 0;
-  uint8_t  min  = 0;
-  uint8_t  sec  = 0;
+  String yr;    
+  String mon;    
+  String day;   
+  String hr;     
+  String min;   
+  String sec;   
+  String timeStr;
 
   DateTime() = default;
 
-  // Build directly from a core "YY/MM/DD,HH:MM:SS" string (no timezone)
   explicit DateTime(const String& core) : timeStr(core) {
     if (core.length() >= 17) {
-      const char* s = core.c_str();
-      yr  = parse2(s, 0);
-      mon = parse2(s, 3);
-      day = parse2(s, 6);
-      hr  = parse2(s, 9);
-      min = parse2(s,12);
-      sec = parse2(s,15);
+      yr  = core.substring(0, 2);
+      mon = core.substring(3, 5);
+      day = core.substring(6, 8);
+      hr  = core.substring(9, 11);
+      min = core.substring(12, 14);
+      sec = core.substring(15, 17);
     }
   }
 
-  // Get current time from modem; no need to construct DateTime first.
+  // Static: retrieves time directly from the modem
   static DateTime getTime() {
-    // Typical reply: +CCLK: "24/10/10,20:10:00-20"
     String r = sendAT("AT+CCLK?");
     int a = r.indexOf('"');
     int b = r.indexOf('"', a + 1);
 
     if (a < 0 || b <= a) {
-      DateTime dt;        // empty (all zeros)
-      dt.timeStr = "";    // no core extracted
+      DateTime dt;
+      dt.timeStr = "";
       return dt;
     }
 
     // Extract the quoted payload
-    String core = r.substring(a + 1, b); // e.g. 24/10/10,20:10:00-20
+    String core = r.substring(a + 1, b); // e.g. "24/10/10,20:10:00-20"
 
-    // Strip timezone suffix (+zz or -zzzz) if present
+    // Strip timezone suffix (+zz or -zzzz)
     int tzPos = core.indexOf('+');
     if (tzPos < 0) tzPos = core.indexOf('-');
     if (tzPos > 0) core.remove(tzPos);
 
-    // Optional: quick format sanity check
+    // Basic validation
     if (!(core.length() >= 17 &&
           core[2] == '/' && core[5] == '/' &&
           core[8] == ',' &&
           core[11] == ':' && core[14] == ':')) {
       DateTime dt;
-      dt.timeStr = core;  // keep what we saw for debugging
+      dt.timeStr = core;  // Keep raw for debugging
       return dt;
     }
 
     return DateTime(core);
   }
 
-private:
-  // Parse two decimal digits at s[i], s[i+1] → 0..99 (fast, no String allocs)
-  static uint8_t parse2(const char* s, int i) {
-    char a = s[i], b = s[i + 1];
-    if ((a < '0' || a > '9') || (b < '0' || b > '9')) return 0;
-    return (uint8_t)((a - '0') * 10 + (b - '0'));
+  // Optional: pretty string representation
+  String formatted() const {
+    return yr + "/" + mon + "/" + day + " " + hr + ":" + min + ":" + sec;
   }
-}; // <-- keep this semicolon
+};
 
 
 void setup() {
