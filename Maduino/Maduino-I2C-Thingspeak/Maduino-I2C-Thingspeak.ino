@@ -19,6 +19,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include "secrets.h"
 
 /* ---------- User config -------------------------------------------- */
 #define SLAVE_ADDRESS  0x08           // I²C address of this Maduino
@@ -195,7 +196,8 @@ void uploadData() {
   if (tempVal.endsWith(","))  tempVal.remove(tempVal.length()  - 1);
 
   /* ---- Build ThingSpeak URL -------------------------------------- */
-  String url = "http://api.thingspeak.com/update?api_key=790NQTTP1GOCK98V&field1=25-07-10&field2=12:38:20&field3=0.000000,0.000000,0.0&field4=+019.28,+019.45,+019.57,+019.71,+019.31,+019.44,+020.00,+020.15&field5=+002.44,+002.96,+000.98,+001.23,+001.27,+001.53,+002.44,+002.91&field6=0.0,0.0";
+  String apiKey = API_WRITE_KEY;
+  String url = "http://api.thingspeak.com/update?api_key=" + apiKey + "&field1=25-07-10&field2=12:38:20&field3=0.000000,0.000000,0.0&field4=+019.28,+019.45,+019.57,+019.71,+019.31,+019.44,+020.00,+020.15&field5=+002.44,+002.96,+000.98,+001.23,+001.27,+001.53,+002.44,+002.91&field6=0.0,0.0";
 
   SerialUSB.println("\n[HTTP] » " + url);
 
