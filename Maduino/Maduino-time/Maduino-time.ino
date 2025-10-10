@@ -6,37 +6,82 @@
 
 const bool DEBUG = true;
 
-/* ====== TYPES ====== */
-class DateTime {
-  public:
-    String   timeStr;
-    uint16_t yr;
-    uint8_t  mon;
-    uint8_t  day;
-    uint8_t  hr;
-    uint8_t  min;
-    uint8_t  sec;
-
-    DateTime() : yr(0), mon(0), day(0), hr(0), min(0), sec(0) {}
-
-    explicit DateTime(const String& time) {
-      // Expected: "YY/MM/DD,HH:MM:SS"
-      this->timeStr = time;
-      yr  = time.substring(0, 2).toInt();   // 00..99
-      mon = time.substring(3, 5).toInt();
-      day = time.substring(6, 8).toInt();
-      hr  = time.substring(9, 11).toInt();
-      min = time.substring(12, 14).toInt();
-      sec = time.substring(15, 17).toInt();
-    }
-};
-
 /* ====== PROTOTYPES ====== */
 String   sendAT(const String& cmd, uint32_t to = 2000, bool dbg = DEBUG);
 bool     modemBoot();
 bool     networkAttach();
 void     enableTimeUpdates();
-DateTime getTime();
+
+
+/* ====== TYPES ====== */
+class DateTime {
+public:
+  String   timeStr;        // Raw "YY/MM/DD,HH:MM:SS" (no TZ tail)
+  uint16_t yr   = 0;       // 0..99 (module returns 2-digit year)
+  uint8_t  mon  = 0;
+  uint8_t  day  = 0;
+  uint8_t  hr   = 0;
+  uint8_t  min  = 0;
+  uint8_t  sec  = 0;
+
+  DateTime() = default;
+
+  // Build directly from a core "YY/MM/DD,HH:MM:SS" string (no timezone)
+  explicit DateTime(const String& core) : timeStr(core) {
+    if (core.length() >= 17) {
+      const char* s = core.c_str();
+      yr  = parse2(s, 0);
+      mon = parse2(s, 3);
+      day = parse2(s, 6);
+      hr  = parse2(s, 9);
+      min = parse2(s,12);
+      sec = parse2(s,15);
+    }
+  }
+
+  // Get current time from modem; no need to construct DateTime first.
+  static DateTime getTime() {
+    // Typical reply: +CCLK: "24/10/10,20:10:00-20"
+    String r = sendAT("AT+CCLK?");
+    int a = r.indexOf('"');
+    int b = r.indexOf('"', a + 1);
+
+    if (a < 0 || b <= a) {
+      DateTime dt;        // empty (all zeros)
+      dt.timeStr = "";    // no core extracted
+      return dt;
+    }
+
+    // Extract the quoted payload
+    String core = r.substring(a + 1, b); // e.g. 24/10/10,20:10:00-20
+
+    // Strip timezone suffix (+zz or -zzzz) if present
+    int tzPos = core.indexOf('+');
+    if (tzPos < 0) tzPos = core.indexOf('-');
+    if (tzPos > 0) core.remove(tzPos);
+
+    // Optional: quick format sanity check
+    if (!(core.length() >= 17 &&
+          core[2] == '/' && core[5] == '/' &&
+          core[8] == ',' &&
+          core[11] == ':' && core[14] == ':')) {
+      DateTime dt;
+      dt.timeStr = core;  // keep what we saw for debugging
+      return dt;
+    }
+
+    return DateTime(core);
+  }
+
+private:
+  // Parse two decimal digits at s[i], s[i+1] → 0..99 (fast, no String allocs)
+  static uint8_t parse2(const char* s, int i) {
+    char a = s[i], b = s[i + 1];
+    if ((a < '0' || a > '9') || (b < '0' || b > '9')) return 0;
+    return (uint8_t)((a - '0') * 10 + (b - '0'));
+  }
+}; // <-- keep this semicolon
+
 
 void setup() {
   SerialUSB.begin(115200);
@@ -53,13 +98,12 @@ void setup() {
   }
 
   enableTimeUpdates();
-  (void)getTime(); // prime once
 
   SerialUSB.println("\nSend commands to the Serial1 terminal");
 }
 
 void loop() {
-  DateTime now = getTime();
+  DateTime now = DateTime::getTime();
   SerialUSB.println(now.timeStr);
   SerialUSB.println(now.yr);
 
@@ -138,33 +182,4 @@ void enableTimeUpdates() {
   (void)sendAT("AT+CTZU=1"); // enable automatic time zone updates (if supported)
 }
 
-DateTime getTime() {
-  // Typical reply: +CCLK: "24/10/10,20:10:00-20"
-  String r = sendAT("AT+CCLK?");
-  int firstQ = r.indexOf('"');
-  int secondQ = r.indexOf('"', firstQ + 1);
 
-  String core;
-  if (firstQ >= 0 && secondQ > firstQ) {
-    core = r.substring(firstQ + 1, secondQ); // e.g. 24/10/10,20:10:00-20
-  }
-
-  // Strip any timezone suffix (±zz or ±zzzz)
-  int tzPos = core.indexOf('+');
-  if (tzPos < 0) tzPos = core.indexOf('-');
-  if (tzPos > 0) core = core.substring(0, tzPos);       // now "YY/MM/DD,HH:MM:SS"
-
-  if (DEBUG) {
-    SerialUSB.print("getTime() core: ");
-    SerialUSB.println(core);
-  }
-
-  // If parsing failed, return an empty DateTime (all zeros) but keep raw string
-  if (core.length() < 17) {
-    DateTime dt;
-    dt.timeStr = core;
-    return dt;
-  }
-
-  return DateTime(core);
-}
