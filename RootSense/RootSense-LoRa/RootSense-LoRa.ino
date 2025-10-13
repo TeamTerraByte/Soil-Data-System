@@ -2,6 +2,7 @@
 #include <AltSoftSerial.h>      
 
 // AltSoftSerial on Uno uses fixed pins: RX=8, TX=9
+// ESP32 has RX on the left and TX on the right
 AltSoftSerial meshSerial;        // no pin arguments
 
 #define SOIL_SENSOR_PIN 2

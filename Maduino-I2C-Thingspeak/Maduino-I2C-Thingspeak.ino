@@ -47,8 +47,70 @@ String sendAT(const String &cmd, uint32_t timeout = 2000, bool dbg = DEBUG);
 void   ltePowerSequence();
 void   uploadData();
 void   receiveEvent(int numBytes);
+String removePrefix(String data, String delim);
 /* ------------------------------------------------------------------- */
 
+class DateTime {
+public:
+  String yr;    
+  String mon;    
+  String day;   
+  String hr;     
+  String min;   
+  String sec;   
+  String timeStr;
+
+  DateTime() = default;
+
+  explicit DateTime(const String& core) : timeStr(core) {
+    if (core.length() >= 17) {
+      yr  = core.substring(0, 2);
+      mon = core.substring(3, 5);
+      day = core.substring(6, 8);
+      hr  = core.substring(9, 11);
+      min = core.substring(12, 14);
+      sec = core.substring(15, 17);
+    }
+  }
+
+  // Static: retrieves time directly from the modem
+  static DateTime getTime() {
+    String r = sendAT("AT+CCLK?");
+    int a = r.indexOf('"');
+    int b = r.indexOf('"', a + 1);
+
+    if (a < 0 || b <= a) {
+      DateTime dt;
+      dt.timeStr = "";
+      return dt;
+    }
+
+    // Extract the quoted payload
+    String core = r.substring(a + 1, b); // e.g. "24/10/10,20:10:00-20"
+
+    // Strip timezone suffix (+zz or -zzzz)
+    int tzPos = core.indexOf('+');
+    if (tzPos < 0) tzPos = core.indexOf('-');
+    if (tzPos > 0) core.remove(tzPos);
+
+    // Basic validation
+    if (!(core.length() >= 17 &&
+          core[2] == '/' && core[5] == '/' &&
+          core[8] == ',' &&
+          core[11] == ':' && core[14] == ':')) {
+      DateTime dt;
+      dt.timeStr = core;  // Keep raw for debugging
+      return dt;
+    }
+
+    return DateTime(core);
+  }
+
+  // Optional: pretty string representation
+  String formatted() const {
+    return yr + "/" + mon + "/" + day + " " + hr + ":" + min + ":" + sec;
+  }
+};
 
 
 void setup() {
@@ -172,6 +234,14 @@ void ltePowerSequence() {
   sendAT("AT+CGPADDR=1", 3000);          // show pdp address
 }
 
+String removePrefix(String data, String delim) {
+  int pos = data.indexOf(delim);
+  if (pos != -1) {
+    data.remove(0, pos + delim.length());
+  }
+  return data;
+}
+
 /* ===================================================================
    Upload the latest buffered readings to ThingSpeak via HTTP GET
    =================================================================== */
@@ -199,14 +269,17 @@ void uploadData() {
 
   DateTime now = DateTime::getTime();
 
+  tempBuf = removePrefix(tempBuf, ", ");
+  moistBuf = removePrefix(moistBuf, ", ");
+
   /* ---- Build ThingSpeak URL -------------------------------------- */
   String apiKey = API_WRITE_KEY;
   String url = "http://api.thingspeak.com/update?api_key=" + apiKey;
-  url += "&field1=" 
-  url += "&field2=" 12:38:20
-  url += "&field3=" + 0.000000,0.000000,0.0
-  url += "&field4=" + 019.28,+019.45,+019.57,+019.71,+019.31,+019.44,+020.00,+020.15
-  url += "&field5=+002.44,+002.96,+000.98,+001.23,+001.27,+001.53,+002.44,+002.91
+  url += "&field1=" + now.yr + "-" + now.mon + "-" + now.day;
+  url += "&field2=" + now.hr + ":" + now.min + ":" + now.sec;
+  url += "&field3=0.000000,0.000000,0.0";
+  url += "&field4=" + tempBuf;
+  url += "&field5=" + moistBuf;
 
   SerialUSB.println("\n[HTTP] » " + url);
 
