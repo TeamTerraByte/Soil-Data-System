@@ -117,7 +117,6 @@ void setup() {
   /* Serial ports ----------------------------------------------------- */
   SerialUSB.begin(115200);
   Serial1.begin(115200);            // LTE module on Serial1
-  while (DEBUG && !SerialUSB);  // wait for serial if in DEBUG mode
 
   delay(1000);
   SerialUSB.println(F("Maduino I²C + LTE uploader booting…"));
