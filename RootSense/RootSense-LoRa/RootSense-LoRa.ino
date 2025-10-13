@@ -51,7 +51,7 @@ void respondToNodes() {
   takeMeasurements();
 
   // Build ONE message with three lines: @hub, Moist..., Temp...
-  String payload = "@hub\n" + lastMoist + "\n" + lastTemp;
+  String payload = "@hub\t" + lastMoist + "\t" + lastTemp;
   sendMesh(payload);
 }
 
@@ -64,11 +64,13 @@ void checkMeshInbound() {
     Serial.print(F("Mesh RX: "));
     Serial.println(line);
 
-    if (line.startsWith("@nodes")) {
+    // Changed: now checks if "@nodes" appears anywhere in the message
+    if (line.indexOf("@nodes") != -1) {
       respondToNodes();
     }
   }
 }
+
 
 bool initializeProbe() {
   String response = sendCommand("?!");
