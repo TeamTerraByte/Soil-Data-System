@@ -1,55 +1,73 @@
 #include <SDI12.h>
-#include <AltSoftSerial.h>      
+#include <AltSoftSerial.h>
 
-// AltSoftSerial on Uno uses fixed pins: RX=8, TX=9
-// ESP32 has RX on the left and TX on the right
-AltSoftSerial meshSerial;        // no pin arguments
+AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 
 #define SOIL_SENSOR_PIN 2
 SDI12 enviroPro(SOIL_SENSOR_PIN);
 
 String probeAddress = "C";
-unsigned long lastMeasurement = 0;
-const unsigned long MEASUREMENT_INTERVAL = 180000; // 3 minutes
-const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds
+const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
+
+// Cached values (updated on demand)
+String lastMoist = "Moist";
+String lastTemp  = "Temp";
 
 void setup() {
   Serial.begin(9600);
-  meshSerial.begin(38400);   // Mesh on D8/D9 via AltSoftSerial
+  meshSerial.begin(38400);
   delay(POWER_STABILIZATION_DELAY);
 
   enviroPro.begin();
-  while(!initializeProbe()) {
+  while (!initializeProbe()) {
     delay(1000);
   }
-
-  takeMeasurements();
-  lastMeasurement = millis();
 }
 
 void loop() {
-  if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
-    enviroPro.begin();  // re-init SDI-12 if you power-cycle the sensor between reads
-    takeMeasurements();
-    lastMeasurement = millis();
-  }
-
+  // Allow manual SDI-12 commands via USB Serial (debug)
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
-    if (command.length() > 0) {
-      sendCommand(command);
-    }
+    if (command.length() > 0) sendCommand(command);
   }
 
-  delay(100);
+  // Listen for inbound Meshtastic TEXTMSG lines
+  checkMeshInbound();
+
+  delay(50);
 }
 
 void sendMesh(const String& s) {
   meshSerial.print(s);
-  meshSerial.print('\n');
-  Serial.print(F("Sent: "));
+  meshSerial.print('\n');   // final newline after the multi-line payload
+  Serial.print(F("Sent (multi-line payload):\n"));
   Serial.println(s);
+}
+
+void respondToNodes() {
+  // Fresh measurements on demand
+  enviroPro.begin();
+  takeMeasurements();
+
+  // Build ONE message with three lines: @hub, Moist..., Temp...
+  String payload = "@hub\n" + lastMoist + "\n" + lastTemp;
+  sendMesh(payload);
+}
+
+void checkMeshInbound() {
+  while (meshSerial.available()) {
+    String line = meshSerial.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
+
+    Serial.print(F("Mesh RX: "));
+    Serial.println(line);
+
+    if (line.startsWith("@nodes")) {
+      respondToNodes();
+    }
+  }
 }
 
 bool initializeProbe() {
@@ -73,7 +91,6 @@ void takeMeasurements() {
 void measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
   String response = sendCommand(measureCommand);
-
   if (response.length() > 0) {
     int measureTime = 3000;
     if (response.length() >= 6) {
@@ -84,17 +101,13 @@ void measureSoilMoisture() {
 
     String dataCommand = probeAddress + "D0!";
     String dataResponse = sendCommand(dataCommand);
-
-    if (dataResponse.length() > 0) {
-      parseMoistureData(dataResponse);
-    }
+    if (dataResponse.length() > 0) parseMoistureData(dataResponse);
   }
 }
 
 void measureTemperature() {
   String measureCommand = probeAddress + "C2!";
   String response = sendCommand(measureCommand);
-
   if (response.length() > 0) {
     int measureTime = 3000;
     if (response.length() >= 6) {
@@ -105,10 +118,7 @@ void measureTemperature() {
 
     String dataCommand = probeAddress + "D0!";
     String dataResponse = sendCommand(dataCommand);
-
-    if (dataResponse.length() > 0) {
-      parseTemperatureData(dataResponse);
-    }
+    if (dataResponse.length() > 0) parseTemperatureData(dataResponse);
   }
 }
 
@@ -129,28 +139,22 @@ void parseMoistureData(String data) {
 
     if (nextDelim > startIndex) {
       String value = data.substring(startIndex, nextDelim);
-      outputData += ",";
-      outputData += value;
-      Serial.print(",");
-      Serial.print(value);
+      outputData += "," + value;
+      Serial.print("," + value);
     }
 
     startIndex = nextDelim + 1;
     if (startIndex < data.length() && (data.charAt(startIndex-1) == '+' || data.charAt(startIndex-1) == '-')) {
       int endNum = startIndex;
-      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') {
-        endNum++;
-      }
+      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') endNum++;
       String value = String(data.charAt(startIndex-1)) + data.substring(startIndex, endNum);
-      outputData += ",";
-      outputData += value;
-      Serial.print(",");
-      Serial.print(value);
+      outputData += "," + value;
+      Serial.print("," + value);
       startIndex = endNum;
     }
   }
   Serial.println();
-  sendMesh(outputData);
+  lastMoist = outputData;  // update cache only
 }
 
 void parseTemperatureData(String data) {
@@ -170,28 +174,22 @@ void parseTemperatureData(String data) {
 
     if (nextDelim > startIndex) {
       String value = data.substring(startIndex, nextDelim);
-      outputData += ",";
-      outputData += value;
-      Serial.print(",");
-      Serial.print(value);
+      outputData += "," + value;
+      Serial.print("," + value);
     }
 
     startIndex = nextDelim + 1;
     if (startIndex < data.length() && (data.charAt(startIndex-1) == '+' || data.charAt(startIndex-1) == '-')) {
       int endNum = startIndex;
-      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') {
-        endNum++;
-      }
+      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') endNum++;
       String value = String(data.charAt(startIndex-1)) + data.substring(startIndex, endNum);
-      outputData += ",";
-      outputData += value;
-      Serial.print(",");
-      Serial.print(value);
+      outputData += "," + value;
+      Serial.print("," + value);
       startIndex = endNum;
     }
   }
   Serial.println();
-  sendMesh(outputData);
+  lastTemp = outputData;  // update cache only
 }
 
 String sendCommand(String command) {
