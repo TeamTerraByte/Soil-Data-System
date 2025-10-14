@@ -8,7 +8,7 @@
    • Set LOG_PORT to another HardwareSerial (e.g., SerialUSB) to retarget
    ============================== */
 #ifndef ENABLE_LOG
-#define ENABLE_LOG 0
+#define ENABLE_LOG 1
 #endif
 
 #ifndef LOG_PORT
@@ -61,6 +61,7 @@ void meshBegin();
 void meshSendLine(const String& line);
 uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs);
 bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs);
+int queryNumber = 0;
 
 void setup() {
   LOG_BEGIN(9600);
@@ -93,15 +94,19 @@ void setup() {
 void loop() {
   // Periodic SDI-12 measurement
   if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
+
     // local sensor measurement
     mySDI12.begin();
     takeMeasurements();
     lastMeasurement = millis();
 
+    delay(500);  // delay so it doesn't block the meshtastic query?
+
     // other sensor measurements
     uint8_t got = meshQueryNodes(REQUIRED_NODE_COUNT, MESH_TIMEOUT_MS);
     LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
     LOG_PRINTLN(got);
+    queryNumber += 1;
   }
 
   // (Optional) Non-blocking echo of any unsolicited mesh text to USB
@@ -178,7 +183,7 @@ String parseLoRa(String data) {
 // Sends @nodes and waits until we get `requiredCount` lines that begin with "@hub"
 // or until `timeoutMs` is reached. Each valid response is printed and forwarded over I2C.
 uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
-  meshSendLine(String(NODES_QUERY));
+  meshSendLine(String(NODES_QUERY) + " " + String(queryNumber));
 
   uint8_t got = 0;
   unsigned long start = millis();
