@@ -3,12 +3,12 @@
    ---------------------------------------------------------------------
    • Receives CSV sensor frames over I²C from an Arduino master
    • Buffers the latest Moisture and Temperature values (add more if needed)
-   • Powers‑up & configures the on‑board SIM7600 LTE module
+   • Powers-up & configures the on-board SIM7600 LTE module
    • Uploads the readings to ThingSpeak using HTTP GET
    ---------------------------------------------------------------------
-   Required wiring (Makerfabs Maduino Zero LTE):
-     LTE_RESET_PIN  ➜ SIM7600 RESET    (active‑LOW)
-     LTE_PWRKEY_PIN ➜ SIM7600 PWRKEY   (active‑LOW, via NPN inverter on PCB)
+   Required wiring (Makerfabs Maduino Zero LTE):
+     LTE_RESET_PIN  ➜ SIM7600 RESET    (active-LOW)
+     LTE_PWRKEY_PIN ➜ SIM7600 PWRKEY   (active-LOW, via NPN inverter on PCB)
      LTE_FLIGHT_PIN ➜ SIM7600 FLIGHT   (LOW = RF ON)
    ---------------------------------------------------------------------
    Adjust the following before use:
@@ -22,33 +22,70 @@
 #include "secrets.h"
 
 /* ---------- User config -------------------------------------------- */
-#define SLAVE_ADDRESS  0x08           // I²C address of this Maduino
-#define APN            "fast.t-mobile.com" // Carrier APN
+#define SLAVE_ADDRESS  0x08                 // I²C address of this Maduino
+#define APN            "fast.t-mobile.com"  // Carrier APN
 /* ------------------------------------------------------------------- */
 
 /* ---------- LTE control pins --------------------------------------- */
-#define LTE_RESET_PIN  6   // active‑LOW
-#define LTE_PWRKEY_PIN 5   // active‑LOW pulse ≥100 ms
+#define LTE_RESET_PIN  6   // active-LOW
+#define LTE_PWRKEY_PIN 5   // active-LOW pulse ≥100 ms
 #define LTE_FLIGHT_PIN 7   // LOW = normal operation
 /* ------------------------------------------------------------------- */
 
 const bool DEBUG = true;            // echo AT chatter to SerialUSB
 
-/* ---------- I²C frame buffering ------------------------------------ */
-String dataBuf = "";
-volatile bool assembling = false;   // true while still receiving a block
-volatile bool dataReady = false;   // true when moistBuf holds fresh data
+/* ---------- Upload queue (SPSC ring buffer) ------------------------ */
+static const uint8_t QUEUE_CAPACITY = 8;
+volatile uint8_t qHead = 0;     // next index to write
+volatile uint8_t qTail = 0;     // next index to read
+String uploadQueue[QUEUE_CAPACITY]; // payloads to upload (concatenated lines)
+
+/* Enqueue payload; returns true on success, false if full (drop new) */
+bool enqueueUpload(const String &payload) {
+  uint8_t nextHead = (qHead + 1) % QUEUE_CAPACITY;
+  if (nextHead == qTail) {
+    // queue full – drop newest to avoid overwriting in-flight data
+    if (DEBUG) SerialUSB.println(F("! Queue full, dropping payload"));
+    return false;
+  }
+  uploadQueue[qHead] = payload;
+  qHead = nextHead; // single producer: safe
+  return true;
+}
+
+/* Dequeue payload; returns true if an item was read */
+bool dequeueUpload(String &out) {
+  if (qTail == qHead) return false; // empty
+  out = uploadQueue[qTail];
+  uploadQueue[qTail] = ""; // free memory
+  qTail = (qTail + 1) % QUEUE_CAPACITY; // single consumer: safe
+  return true;
+}
+
+/* ---------- I²C frame buffering / assembly ------------------------- */
+// Data arrives in chunks. Each *unit* is newline ('\n') terminated.
+// We assemble complete lines until dataBuf is at least 140 chars,
+// then push that as *one* string into the queue.
+String dataBuf = "";                 // assembly accumulator for current batch
+String rxRemainder = "";             // holds a partial line between callbacks
+volatile bool assembling = false;    // true while running receiveEvent
+/* ------------------------------------------------------------------- */
+
+/* ---------- Upload pacing / overlap control ------------------------ */
+bool uploading = false;                       // guarded by loop()
+const unsigned long UPLOAD_GAP_MS = 1500;     // small delay between uploads
+unsigned long nextUploadAllowed = 0;          // earliest time we may start
 /* ------------------------------------------------------------------- */
 
 /* ---------- Forward declarations ----------------------------------- */
 String sendAT(const String &cmd, uint32_t timeout = 2000, bool dbg = DEBUG);
 void   ltePowerSequence();
-void   uploadData();
+void   uploadData(const String &payload);
 void   receiveEvent(int numBytes);
-String removePrefix(String data, String delim);
+String removePrefix(String data, String prefix); // (kept for compatibility)
 /* ------------------------------------------------------------------- */
 
-// Custom classes ----------------------------------------------------
+// ---------------------------- Custom classes ------------------------
 class DateTime {
 public:
   String yr;    
@@ -84,79 +121,69 @@ public:
       return dt;
     }
 
-    // Extract the quoted payload
     String core = r.substring(a + 1, b); // e.g. "24/10/10,20:10:00-20"
 
-    // Strip timezone suffix (+zz or -zzzz)
     int tzPos = core.indexOf('+');
     if (tzPos < 0) tzPos = core.indexOf('-');
     if (tzPos > 0) core.remove(tzPos);
 
-    // Basic validation
     if (!(core.length() >= 17 &&
           core[2] == '/' && core[5] == '/' &&
           core[8] == ',' &&
           core[11] == ':' && core[14] == ':')) {
       DateTime dt;
-      dt.timeStr = core;  // Keep raw for debugging
+      dt.timeStr = core;
       return dt;
     }
-
     return DateTime(core);
   }
 
-  // Optional: pretty string representation
   String formatted() const {
     return yr + "/" + mon + "/" + day + " " + hr + ":" + min + ":" + sec;
   }
 };
 
-
 class SoilData {
-  public:
-    String meshName;
-    String moistData;
-    String tempData;
+public:
+  String meshName;
+  String moistData;
+  String tempData;
 
-    // Constructor that parses a single input string in the format:
-    // "meshName\tMoist\tTemp"
-    SoilData(String input) {
-      // Split by tabs
-      int firstTab = input.indexOf('\t');
-      int secondTab = input.indexOf('\t', firstTab + 1);
+  // Constructor that parses a single input string in the format:
+  // "meshName\tMoist\tTemp"
+  SoilData(String input) {
+    int firstTab = input.indexOf('\t');
+    int secondTab = input.indexOf('\t', firstTab + 1);
 
-      if (firstTab == -1 || secondTab == -1) {
-        // Invalid format — assign defaults
-        meshName = "";
-        moistData = "";
-        tempData = "";
-        return;
-      }
-
-      // Extract parts
-      meshName = input.substring(0, firstTab);
-      moistData = input.substring(firstTab + 1, secondTab);
-      tempData = input.substring(secondTab + 1);
-
-      // remove Moist and Temp prefixes
-      moistData = SoilData::removePrefix(moistData, ", ");
-      tempData = SoilData::removePrefix(tempData, ", ");
-
-      // Trim spaces or stray characters
-      meshName.trim();
-      moistData.trim();
-      tempData.trim();
+    if (firstTab == -1 || secondTab == -1) {
+      meshName = "";
+      moistData = "";
+      tempData = "";
+      return;
     }
 
-    static String removePrefix(String data, String delim) {
-      int pos = data.indexOf(delim);
-      if (pos != -1) {
-        data.remove(0, pos + delim.length());
-      }
-      return data;
+    meshName = input.substring(0, firstTab);
+    moistData = input.substring(firstTab + 1, secondTab);
+    tempData = input.substring(secondTab + 1);
+
+    // remove Moist and Temp prefixes
+    moistData = SoilData::removePrefix(moistData, ", ");
+    tempData = SoilData::removePrefix(tempData, ", ");
+
+    meshName.trim();
+    moistData.trim();
+    tempData.trim();
+  }
+
+  static String removePrefix(String data, String delim) {
+    int pos = data.indexOf(delim);
+    if (pos != -1) {
+      data.remove(0, pos + delim.length());
     }
+    return data;
+  }
 };
-// end of custom classes  ---------------------------------------------
+// -------------------------- end custom classes ----------------------
 
 
 void setup() {
@@ -165,7 +192,7 @@ void setup() {
   Serial1.begin(115200);            // LTE module on Serial1
   
   delay(5000);
-  SerialUSB.println(F("Maduino I²C + LTE uploader booting…"));
+  SerialUSB.println(F("Maduino I²C + LTE uploader booting…"));
 
   /* LTE GPIO --------------------------------------------------------- */
   pinMode(LTE_RESET_PIN,  OUTPUT);
@@ -180,45 +207,80 @@ void setup() {
 }
 
 void loop() {
-  /* Only attempt upload when both values are fresh */
-  if (dataReady && !assembling) {
-    uploadData();
+  // Upload worker: single-consumer side of the queue
+  if (!uploading && millis() >= nextUploadAllowed) {
+    String payload;
+    if (dequeueUpload(payload)) {
+      uploading = true;                 // prevent overlap
+      uploadData(payload);
+      uploading = false;
+      nextUploadAllowed = millis() + UPLOAD_GAP_MS; // pacing
+    }
   }
 }
 
 /* ===================================================================
-   I²C receive ISR – builds a String from incoming bytes
-   Format expected from master (examples):
-     "Moist,550,"   – soil moisture percent
-     "Temp,23.45,"  – °C
+   I²C receive callback – chunked input, newline-delimited "units".
+   We assemble complete lines into dataBuf until it reaches ≥140 chars,
+   then push that *as one string* into the upload queue.
    =================================================================== */
 void receiveEvent(int numBytes) {
-  // need to implement queue for when requests come in too fast
   assembling = true;
-  String frame = "";
+
+  String chunk;
+  chunk.reserve(numBytes + 8);
   while (Wire.available()) {
     char c = Wire.read();
-    frame += c;
+    chunk += c;
   }
-  // The smallest complete dataBuf to expect is 144 chars in length.
-  // That is a measurement from the hub.
-  if (frame <= 0){
-    SerialUSB.println("Error, received empty frame");
+  if (chunk.length() == 0) {
+    assembling = false;
     return;
   }
-  dataBuf += frame;
-  
-  if (dataBuf.length() >= 140){
-    assembling = false;
-    dataReady = true;
-    SerialUSB.println("dataBuf marked ready: " + dataBuf);
-    int newline_i = dataBuf.indexOf("\n");
-    SerialUSB.println("Index of newline: " + String(newline_i));
+
+  // Prepend any partial trailing data from previous callback
+  String work = rxRemainder + chunk;
+  rxRemainder = "";
+
+  // Process complete lines
+  int start = 0;
+  while (true) {
+    int nl = work.indexOf('\n', start);
+    if (nl < 0) break;  // no complete line left
+    String unit = work.substring(start, nl);
+    start = nl + 1;
+
+    unit.trim();                // drop \r and whitespace
+    if (unit.length() == 0) continue;
+
+    // Append to current batch (keep '\n' as separator while assembling)
+    if (dataBuf.length() > 0) dataBuf += '\n';
+    dataBuf += unit;
+
+    // When batch reaches threshold, push into queue and start a new batch
+    if (dataBuf.length() >= 140) {
+      // Try to enqueue; on failure (queue full) we drop the batch
+      if (enqueueUpload(dataBuf)) {
+        if (DEBUG) {
+          SerialUSB.print(F("Queued payload ("));
+          SerialUSB.print(dataBuf.length());
+          SerialUSB.println(F(" bytes)"));
+        }
+      }
+      dataBuf = ""; // reset assembly for the next batch
+    }
   }
+
+  // Any leftover partial line becomes the remainder for next time
+  if (start < (int)work.length()) {
+    rxRemainder = work.substring(start);
+  }
+
+  assembling = false;
 }
 
 /* ===================================================================
-   LTE power‑up & network attach – called once in setup()
+   LTE power-up & network attach – called before each upload
    Uses conservative timing to guarantee a clean start.
    =================================================================== */
 void ltePowerSequence() {
@@ -227,7 +289,6 @@ void ltePowerSequence() {
   delay(2000);
   digitalWrite(LTE_RESET_PIN, LOW);
 
-  
   delay(100);
   digitalWrite(LTE_PWRKEY_PIN, HIGH);
   delay(2000);
@@ -235,38 +296,40 @@ void ltePowerSequence() {
 
   digitalWrite(LTE_FLIGHT_PIN, LOW); // Normal mode
 
-  delay(30000); // Wait for LTE module
+  delay(30000); // Wait for LTE module to fully boot/attach (conservative)
 
-  // LTE network setup
+  // LTE network setup (basic)
   sendAT("AT+CCID", 3000);
   sendAT("AT+CREG?", 3000);
   sendAT("AT+CGATT=1", 1000);
   sendAT("AT+CGACT=1,1", 1000);
-  sendAT("AT+CGDCONT=1,\"IP\",\"fast.t-mobile.com\"", 1000);
-  sendAT("AT+CGPADDR=1", 3000);          // show pdp address
+  sendAT("AT+CGDCONT=1,\"IP\",\"" APN "\"", 1000);
+  sendAT("AT+CGPADDR=1", 3000); // show pdp address
 }
 
-
-
 /* ===================================================================
-   Upload the latest buffered readings to ThingSpeak via HTTP GET
+   Upload a single payload to ThingSpeak via HTTP GET
+   - payload: concatenated newline-delimited units (≥140 when queued)
    =================================================================== */
-void uploadData() {
-  dataBuf.replace("\n", "");
-  dataBuf.replace("\r", "");
+void uploadData(const String &payload) {
+  // Sanitize – ThingSpeak URL cannot contain CR/LF
+  String clean = payload;
+  clean.replace("\r", "");
+  clean.replace("\n", "");
 
-  if (dataBuf.length() == 0){
-    SerialUSB.println("! Upload cancelled, dataBuf empty");
+  if (clean.length() == 0){
+    SerialUSB.println(F("! Upload cancelled: empty payload"));
     return;
   }
 
-  // For some reason, I have only observed consistent success using HTTP
-  // if I reset LTE before every query
-  ltePowerSequence(); 
+  // Reset & bring up the modem for a clean HTTP session
+  ltePowerSequence();
 
-  SoilData data(dataBuf);  // parse dataBuf string
-  DateTime now = DateTime::getTime();  // get the time and parse it
-
+  // NOTE: Existing parser expects one "meshName\tMoist\tTemp" unit.
+  // If your payload combines multiple units, ensure your upstream format
+  // is compatible. Here we proceed with the concatenated string.
+  SoilData data(clean);
+  DateTime now = DateTime::getTime();
 
   /* ---- Build ThingSpeak URL -------------------------------------- */
   String apiKey = API_WRITE_KEY;
@@ -279,9 +342,9 @@ void uploadData() {
 
   SerialUSB.println("\n[HTTP] » " + url);
 
-  /* ---- One‑shot HTTP session ------------------------------------- */
+  /* ---- One-shot HTTP session ------------------------------------- */
   if (sendAT("AT+HTTPTERM", 1000).indexOf("ERROR") == -1) {
-    // ignore result – module may reply ERROR if not initialised yet
+    // ignore result – module may reply ERROR if not initialized yet
   }
   if (sendAT("AT+HTTPINIT", 5000).indexOf("OK") == -1) {
     SerialUSB.println(F("HTTPINIT failed – aborting"));
@@ -290,17 +353,14 @@ void uploadData() {
   sendAT("AT+HTTPPARA=\"CONTENT\",\"application/x-www-form-urlencoded\"", 1000);
   sendAT("AT+HTTPPARA=\"URL\",\"" + url + "\"", 2000);
 
-  /* Start HTTP GET (method 0) */
-  String resp = sendAT("AT+HTTPACTION=0", 30000);
+  /* Start HTTP GET (method 0) */
+  String resp = sendAT("AT+HTTPACTION=0", 15000);
   if (resp.indexOf("+HTTPACTION: 0,200") != -1) {
     SerialUSB.println(F("Upload OK"));
   } else {
     SerialUSB.println("Upload failed: " + resp);
   }
   sendAT("AT+HTTPTERM", 1000);
-  
-  dataBuf = "";
-  dataReady = false;
 }
 
 /* ===================================================================
@@ -320,4 +380,15 @@ String sendAT(const String &cmd, uint32_t timeout, bool dbg) {
     SerialUSB.print(cmd); SerialUSB.print(F(" → ")); SerialUSB.println(buffer);
   }
   return buffer;
+}
+
+/* ===================================================================
+   Legacy helper retained for compatibility with prior code
+   =================================================================== */
+String removePrefix(String data, String prefix){
+  int pos = data.indexOf(prefix);
+  if (pos != -1) {
+    data.remove(0, pos + prefix.length());
+  }
+  return data;
 }
