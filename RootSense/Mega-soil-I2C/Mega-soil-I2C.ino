@@ -23,10 +23,10 @@ const char* NODES_QUERY = "@nodes";           // query we send
 // Forward declarations
 String sendCommand(String command);
 void takeMeasurements();
-void measureSoilMoisture();
-void measureTemperature();
-void parseMoistureData(String data);
-void parseTemperatureData(String data);
+String measureSoilMoisture();
+String measureTemperature();
+String parseMoistureData(String data);
+String parseTemperatureData(String data);
 void transmitI2C(String data);
 
 // Meshtastic helpers
@@ -138,6 +138,28 @@ bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs) {
   }
 }
 
+String parseLoRa(String data) {
+  // Find the position of ':' which separates the node ID from the rest
+  int colonIndex = data.indexOf(':');
+  if (colonIndex == -1) return ""; // Invalid format, return empty string
+
+  // Extract node ID (everything before ':')
+  String nodeID = data.substring(0, colonIndex);
+  nodeID.trim(); // Remove any extra spaces
+
+  // Find the first tab after "@hub" to locate where the real data starts
+  int tabIndex = data.indexOf('\t', colonIndex);
+  if (tabIndex == -1) return ""; // Invalid format, return empty string
+
+  // Extract everything after the first tab
+  String payload = data.substring(tabIndex + 1);
+  payload.trim();
+
+  // Combine node ID with the payload separated by a tab
+  return nodeID + '\t' + payload;
+}
+
+
 // Sends @nodes and waits until we get `requiredCount` lines that begin with "@hub"
 // or until `timeoutMs` is reached. Each valid response is printed and forwarded over I2C.
 uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
@@ -156,13 +178,15 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
       // Check for expected prefix
       if (line.indexOf(HUB_PREFIX) != -1) {
         got++;
-        Serial.print(F("[Mesh] Got #"));
-        Serial.print(got);
-        Serial.print(F(": "));
-        Serial.println(line);
+        // Serial.print(F("[Mesh] Got #"));
+        // Serial.print(got);
+        // Serial.print(F(": "));
+        // Serial.println(line);
 
         // Forward the line over I2C to the slave (keeps your existing pipeline)
-        transmitI2C(line);
+        String parsed_line = parseLoRa(line);
+        Serial.println("Transmitting over LTE: " + parsed_line);
+        transmitI2C(parsed_line);
       } else {
         // Still print other lines for visibility
         Serial.print(F("[Mesh] Unfiltered: "));
@@ -195,12 +219,15 @@ bool initializeProbe() {
 }
 
 void takeMeasurements() {
-  measureSoilMoisture();
+  String sm = measureSoilMoisture();
   delay(500);
-  measureTemperature();
+  String st = measureTemperature();
+  String payload = "hub\t" + sm + "\t" + st + "\n";
+  Serial.println("Transmitting over LTE: " + payload);
+  transmitI2C(payload);
 }
 
-void measureSoilMoisture() {
+String measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
   String response = sendCommand(measureCommand);
 
@@ -216,12 +243,15 @@ void measureSoilMoisture() {
     String dataResponse = sendCommand(dataCommand);
 
     if (dataResponse.length() > 0) {
-      parseMoistureData(dataResponse);
+      return parseMoistureData(dataResponse);
+    }
+    else {
+      return "Error measuring soil moisture";
     }
   }
 }
 
-void measureTemperature() {
+String measureTemperature() {
   String measureCommand = probeAddress + "C2!";
   String response = sendCommand(measureCommand);
 
@@ -237,14 +267,16 @@ void measureTemperature() {
     String dataResponse = sendCommand(dataCommand);
 
     if (dataResponse.length() > 0) {
-      parseTemperatureData(dataResponse);
+      return parseTemperatureData(dataResponse);
+    }
+    else {
+      return "Error measuring soil temp";
     }
   }
 }
 
-void parseMoistureData(String data) {
+String parseMoistureData(String data) {
   String outputData = "Moist";
-  Serial.print(outputData);
 
   int startIndex = 1;
   while (startIndex < data.length()) {
@@ -274,19 +306,15 @@ void parseMoistureData(String data) {
       String value = String(data.charAt(startIndex-1)) + data.substring(startIndex, endNum);
       outputData += ",";
       outputData += value;
-      Serial.print(",");
-      Serial.print(value);
       startIndex = endNum;
     }
   }
-  Serial.println();
 
-  transmitI2C(outputData);
+  return outputData;
 }
 
-void parseTemperatureData(String data) {
+String parseTemperatureData(String data) {
   String outputData = "Temp";
-  Serial.print(outputData);
 
   int startIndex = 1;
   while (startIndex < data.length()) {
@@ -316,14 +344,11 @@ void parseTemperatureData(String data) {
       String value = String(data.charAt(startIndex-1)) + data.substring(startIndex, endNum);
       outputData += ",";
       outputData += value;
-      Serial.print(",");
-      Serial.print(value);
       startIndex = endNum;
     }
   }
-  Serial.println();
 
-  transmitI2C(outputData);
+  return outputData;
 }
 
 void transmitI2C(String data) {

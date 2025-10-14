@@ -15,6 +15,12 @@ String lastTemp  = "Temp";
 
 void setup() {
   Serial.begin(9600);
+  // if (false){
+  //   while(!Serial){
+  //     delay(1000);
+  //   }
+  //   Serial.println("Serial inited");
+  // }
   meshSerial.begin(38400);
   delay(POWER_STABILIZATION_DELAY);
 
@@ -41,7 +47,7 @@ void loop() {
 void sendMesh(const String& s) {
   meshSerial.print(s);
   meshSerial.print('\n');   // final newline after the multi-line payload
-  Serial.print(F("Sent (multi-line payload):\n"));
+  Serial.print(F("Sent (tab separated payload):\n"));
   Serial.println(s);
 }
 
