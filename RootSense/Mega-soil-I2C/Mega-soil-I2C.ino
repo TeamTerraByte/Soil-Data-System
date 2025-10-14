@@ -66,26 +66,15 @@ void setup() {
 void loop() {
   // Periodic SDI-12 measurement
   if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
+    // local sensor measurement
     mySDI12.begin();
     takeMeasurements();
     lastMeasurement = millis();
-  }
 
-  // Manual commands from USB Serial
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-    if (command.length() > 0) {
-      if (command.equalsIgnoreCase("@nodes")) {
-        Serial.println(F("[Mesh] Manual discovery requested."));
-        uint8_t got = meshQueryNodes(REQUIRED_NODE_COUNT, MESH_TIMEOUT_MS);
-        Serial.print(F("[Mesh] Discovery complete. Responses: "));
-        Serial.println(got);
-      } else {
-        // Pass anything else to SDI-12 as before
-        sendCommand(command);
-      }
-    }
+    // other sensor measurements
+    uint8_t got = meshQueryNodes(REQUIRED_NODE_COUNT, MESH_TIMEOUT_MS);
+    Serial.print(F("[Mesh] Discovery complete. Responses: "));
+    Serial.println(got);
   }
 
   // (Optional) Non-blocking echo of any unsolicited mesh text to USB
