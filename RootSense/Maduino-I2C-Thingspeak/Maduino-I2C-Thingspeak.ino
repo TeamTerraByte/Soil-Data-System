@@ -35,11 +35,9 @@
 const bool DEBUG = true;            // echo AT chatter to SerialUSB
 
 /* ---------- I²C frame buffering ------------------------------------ */
-String moistBuf, tempBuf;           // raw CSV segments
+String dataBuf = "";
 volatile bool assembling = false;   // true while still receiving a block
-volatile bool moistReady = false;   // true when moistBuf holds fresh data
-volatile bool tempReady  = false;   // true when tempBuf  holds fresh data
-String currentDataType = "";
+volatile bool dataReady = false;   // true when moistBuf holds fresh data
 /* ------------------------------------------------------------------- */
 
 /* ---------- Forward declarations ----------------------------------- */
@@ -50,6 +48,7 @@ void   receiveEvent(int numBytes);
 String removePrefix(String data, String delim);
 /* ------------------------------------------------------------------- */
 
+// Custom classes ----------------------------------------------------
 class DateTime {
 public:
   String yr;    
@@ -113,12 +112,59 @@ public:
 };
 
 
+class SoilData {
+  public:
+    String meshName;
+    String moistData;
+    String tempData;
+
+    // Constructor that parses a single input string in the format:
+    // "meshName\tMoist\tTemp"
+    SoilData(String input) {
+      // Split by tabs
+      int firstTab = input.indexOf('\t');
+      int secondTab = input.indexOf('\t', firstTab + 1);
+
+      if (firstTab == -1 || secondTab == -1) {
+        // Invalid format — assign defaults
+        meshName = "";
+        moistData = "";
+        tempData = "";
+        return;
+      }
+
+      // Extract parts
+      meshName = input.substring(0, firstTab);
+      moistData = input.substring(firstTab + 1, secondTab);
+      tempData = input.substring(secondTab + 1);
+
+      // remove Moist and Temp prefixes
+      moistData = SoilData::removePrefix(moistData, ", ");
+      tempData = SoilData::removePrefix(tempData, ", ");
+
+      // Trim spaces or stray characters
+      meshName.trim();
+      moistData.trim();
+      tempData.trim();
+    }
+
+    static String removePrefix(String data, String delim) {
+      int pos = data.indexOf(delim);
+      if (pos != -1) {
+        data.remove(0, pos + delim.length());
+      }
+      return data;
+    }
+};
+// end of custom classes  ---------------------------------------------
+
+
 void setup() {
   /* Serial ports ----------------------------------------------------- */
   SerialUSB.begin(115200);
   Serial1.begin(115200);            // LTE module on Serial1
-
-  delay(1000);
+  
+  delay(5000);
   SerialUSB.println(F("Maduino I²C + LTE uploader booting…"));
 
   /* LTE GPIO --------------------------------------------------------- */
@@ -135,8 +181,7 @@ void setup() {
 
 void loop() {
   /* Only attempt upload when both values are fresh */
-  if (moistReady && tempReady && !assembling) {
-    moistReady = tempReady = false;
+  if (dataReady && !assembling) {
     uploadData();
   }
 }
@@ -148,59 +193,27 @@ void loop() {
      "Temp,23.45,"  – °C
    =================================================================== */
 void receiveEvent(int numBytes) {
+  // need to implement queue for when requests come in too fast
   assembling = true;
   String frame = "";
   while (Wire.available()) {
     char c = Wire.read();
     frame += c;
   }
-
-  // Check if this is the start of a new data transmission
-  if (frame.startsWith("Moist,")) {
-    // Start of moisture data
-    currentDataType = "Moist";
-    moistBuf = frame;
-    moistReady = false;
-    SerialUSB.println("Started assembling Moisture data");
-  } 
-  else if (frame.startsWith("Temp,")) {
-    // Start of temperature data
-    currentDataType = "Temp";
-    tempBuf = frame;
-    tempReady = false;
-    SerialUSB.println("Started assembling Temperature data");
+  // The smallest complete dataBuf to expect is 144 chars in length.
+  // That is a measurement from the hub.
+  if (frame <= 0){
+    SerialUSB.println("Error, received empty frame");
+    return;
   }
-  else if (assembling) {
-    // This is a continuation of the current data type
-    if (currentDataType == "Moist") {
-      moistBuf += frame;
-    } else if (currentDataType == "Temp") {
-      tempBuf += frame;
-    }
-    
-    // Check if this appears to be the end of the transmission
-    // (looking for data that ends with a comma followed by few characters or just comma)
-    if (frame.length() < 15) {
-      // This looks like the end of transmission
-      assembling = false;
-      
-      if (currentDataType == "Moist") {
-        SerialUSB.println("=== COMPLETE MOISTURE DATA ===");
-        SerialUSB.println(moistBuf);
-        SerialUSB.println("===============================");
-        // You can process the complete moisture CSV string here
-        moistReady = true;
-      } 
-      else if (currentDataType == "Temp") {
-        SerialUSB.println("=== COMPLETE TEMPERATURE DATA ===");
-        SerialUSB.println(tempBuf);
-        SerialUSB.println("==================================");
-        // You can process the complete temperature CSV string here
-        tempReady = true;
-      }
-      
-      currentDataType = "";
-    }
+  dataBuf += frame;
+  
+  if (dataBuf.length() >= 140){
+    assembling = false;
+    dataReady = true;
+    SerialUSB.println("dataBuf marked ready: " + dataBuf);
+    int newline_i = dataBuf.indexOf("\n");
+    SerialUSB.println("Index of newline: " + String(newline_i));
   }
 }
 
@@ -233,43 +246,27 @@ void ltePowerSequence() {
   sendAT("AT+CGPADDR=1", 3000);          // show pdp address
 }
 
-String removePrefix(String data, String delim) {
-  int pos = data.indexOf(delim);
-  if (pos != -1) {
-    data.remove(0, pos + delim.length());
-  }
-  return data;
-}
+
 
 /* ===================================================================
    Upload the latest buffered readings to ThingSpeak via HTTP GET
    =================================================================== */
 void uploadData() {
-  moistBuf.replace("\n", "");
-  moistBuf.replace("\r", "");
-  tempBuf.replace("\n", "");
-  tempBuf.replace("\r", "");
+  dataBuf.replace("\n", "");
+  dataBuf.replace("\r", "");
 
-  if (moistBuf.length() == 0 || tempBuf.length() ==0){
-    SerialUSB.println("! Upload cancelled, moistBuf or tempBuf empty");
-    return;  // I'm not sure how I'm uploading empty buffers
+  if (dataBuf.length() == 0){
+    SerialUSB.println("! Upload cancelled, dataBuf empty");
+    return;
   }
 
   // For some reason, I have only observed consistent success using HTTP
   // if I reset LTE before every query
   ltePowerSequence(); 
 
-  /* ---- Extract numeric part (strip label & trailing comma) -------- */
-  String moistVal = moistBuf.substring(6);   // after "Moist,"
-  String tempVal  = tempBuf.substring(5);    // after "Temp,"
+  SoilData data(dataBuf);  // parse dataBuf string
+  DateTime now = DateTime::getTime();  // get the time and parse it
 
-  if (moistVal.endsWith(",")) moistVal.remove(moistVal.length() - 1);
-  if (tempVal.endsWith(","))  tempVal.remove(tempVal.length()  - 1);
-
-  DateTime now = DateTime::getTime();
-
-  tempBuf = removePrefix(tempBuf, ", ");
-  moistBuf = removePrefix(moistBuf, ", ");
 
   /* ---- Build ThingSpeak URL -------------------------------------- */
   String apiKey = API_WRITE_KEY;
@@ -277,8 +274,8 @@ void uploadData() {
   url += "&field1=" + now.yr + "-" + now.mon + "-" + now.day;
   url += "&field2=" + now.hr + ":" + now.min + ":" + now.sec;
   url += "&field3=0.000000,0.000000,0.0";
-  url += "&field4=" + tempBuf;
-  url += "&field5=" + moistBuf;
+  url += "&field4=" + data.tempData;
+  url += "&field5=" + data.moistData;
 
   SerialUSB.println("\n[HTTP] » " + url);
 
@@ -302,8 +299,8 @@ void uploadData() {
   }
   sendAT("AT+HTTPTERM", 1000);
   
-  moistBuf = ""; // Clear for next transmission
-  tempBuf = ""; // Clear for next transmission
+  dataBuf = "";
+  dataReady = false;
 }
 
 /* ===================================================================
