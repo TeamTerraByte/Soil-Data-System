@@ -1,6 +1,32 @@
 #include <SDI12.h>
 #include <Wire.h>
 
+/* ==============================
+   Logging macros (toggle/retarget)
+   --------------------------------
+   • Set ENABLE_LOG to 0 to strip all log calls at compile time
+   • Set LOG_PORT to another HardwareSerial (e.g., SerialUSB) to retarget
+   ============================== */
+#ifndef ENABLE_LOG
+#define ENABLE_LOG 0
+#endif
+
+#ifndef LOG_PORT
+#define LOG_PORT Serial
+#endif
+
+#if ENABLE_LOG
+  #define LOG_BEGIN(...)     LOG_PORT.begin(__VA_ARGS__)
+  #define LOG_PRINT(...)     LOG_PORT.print(__VA_ARGS__)
+  #define LOG_PRINTLN(...)   LOG_PORT.println(__VA_ARGS__)
+  #define LOG_WRITE(...)     LOG_PORT.write(__VA_ARGS__)
+#else
+  #define LOG_BEGIN(...)
+  #define LOG_PRINT(...)
+  #define LOG_PRINTLN(...)
+  #define LOG_WRITE(...)
+#endif
+
 // ---------------- SDI-12 & I2C ----------------
 #define DATA_PIN 53
 #define SLAVE_ADDRESS 0x08
@@ -28,6 +54,7 @@ String measureTemperature();
 String parseMoistureData(String data);
 String parseTemperatureData(String data);
 void transmitI2C(String data);
+bool initializeProbe();
 
 // Meshtastic helpers
 void meshBegin();
@@ -36,7 +63,7 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs);
 bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs);
 
 void setup() {
-  Serial.begin(9600);
+  LOG_BEGIN(9600);
   Wire.begin();
 
   // Bring up Meshtastic serial
@@ -52,15 +79,15 @@ void setup() {
     delay(1000);
   }
 
-  Serial.println(F("Taking first measurement..."));
+  LOG_PRINTLN(F("Taking first measurement..."));
   takeMeasurements();
   lastMeasurement = millis();
 
   // --- Query mesh nodes once at startup ---
-  Serial.println(F("[Mesh] Querying nodes..."));
+  LOG_PRINTLN(F("[Mesh] Querying nodes..."));
   uint8_t got = meshQueryNodes(REQUIRED_NODE_COUNT, MESH_TIMEOUT_MS);
-  Serial.print(F("[Mesh] Discovery complete. Responses: "));
-  Serial.println(got);
+  LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
+  LOG_PRINTLN(got);
 }
 
 void loop() {
@@ -73,14 +100,14 @@ void loop() {
 
     // other sensor measurements
     uint8_t got = meshQueryNodes(REQUIRED_NODE_COUNT, MESH_TIMEOUT_MS);
-    Serial.print(F("[Mesh] Discovery complete. Responses: "));
-    Serial.println(got);
+    LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
+    LOG_PRINTLN(got);
   }
 
   // (Optional) Non-blocking echo of any unsolicited mesh text to USB
   while (Serial1.available() > 0) {
     char c = Serial1.read();
-    Serial.write(c);
+    LOG_WRITE(c);
   }
 
   delay(100);
@@ -90,15 +117,15 @@ void loop() {
 void meshBegin() {
   Serial1.begin(MESH_BAUD);
   delay(100);
-  Serial.println(F("[Mesh] Serial1 started for Meshtastic."));
+  LOG_PRINTLN(F("[Mesh] Serial1 started for Meshtastic."));
 }
 
 void meshSendLine(const String& line) {
   // TEXTMSG mode requires newline-terminated message
   Serial1.print(line);
   Serial1.print('\n');
-  Serial.print(F("[Mesh] Sent: "));
-  Serial.println(line);
+  LOG_PRINT(F("[Mesh] Sent: "));
+  LOG_PRINTLN(line);
 }
 
 // Reads one newline-terminated line from Serial1 with a small per-character timeout.
@@ -148,7 +175,6 @@ String parseLoRa(String data) {
   return nodeID + '\t' + payload;
 }
 
-
 // Sends @nodes and waits until we get `requiredCount` lines that begin with "@hub"
 // or until `timeoutMs` is reached. Each valid response is printed and forwarded over I2C.
 uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
@@ -167,40 +193,36 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
       // Check for expected prefix
       if (line.indexOf(HUB_PREFIX) != -1) {
         got++;
-        // Serial.print(F("[Mesh] Got #"));
-        // Serial.print(got);
-        // Serial.print(F(": "));
-        // Serial.println(line);
 
         // Forward the line over I2C to the slave (keeps your existing pipeline)
         String parsed_line = parseLoRa(line);
-        Serial.println("Transmitting over LTE: " + parsed_line);
+        LOG_PRINTLN(String("Transmitting over LTE: ") + parsed_line);
         transmitI2C(parsed_line);
       } else {
         // Still print other lines for visibility
-        Serial.print(F("[Mesh] Unfiltered: "));
-        Serial.println(line);
+        LOG_PRINT(F("[Mesh] Unfiltered: "));
+        LOG_PRINTLN(line);
       }
     }
   }
 
   if (got < requiredCount) {
-    Serial.print(F("[Mesh] Timeout waiting for nodes. Got "));
-    Serial.print(got);
-    Serial.print(F(" of "));
-    Serial.println(requiredCount);
+    LOG_PRINT(F("[Mesh] Timeout waiting for nodes. Got "));
+    LOG_PRINT(got);
+    LOG_PRINT(F(" of "));
+    LOG_PRINTLN(requiredCount);
   }
   return got;
 }
 
-// ---------------- SDI-12 workflow (unchanged) ----------------
+// ---------------- SDI-12 workflow ----------------
 bool initializeProbe() {
   String response = sendCommand("?!");
   if (response.length() > 0) {
     probeAddress = response;
     return true;
   } else {
-    Serial.println("Soil Probe C not detected");
+    LOG_PRINTLN("Soil Probe C not detected");
     probeAddress = "C";
     return false;
   }
@@ -212,7 +234,7 @@ void takeMeasurements() {
   delay(500);
   String st = measureTemperature();
   String payload = "hub\t" + sm + "\t" + st + "\n";
-  Serial.println("Transmitting over LTE: " + payload);
+  LOG_PRINTLN(String("Transmitting over LTE: ") + payload);
   transmitI2C(payload);
 }
 
@@ -238,6 +260,7 @@ String measureSoilMoisture() {
       return "Error measuring soil moisture";
     }
   }
+  return "";
 }
 
 String measureTemperature() {
@@ -262,6 +285,7 @@ String measureTemperature() {
       return "Error measuring soil temp";
     }
   }
+  return "";
 }
 
 String parseMoistureData(String data) {
@@ -282,8 +306,8 @@ String parseMoistureData(String data) {
       String value = data.substring(startIndex, nextDelim);
       outputData += ",";
       outputData += value;
-      Serial.print(",");
-      Serial.print(value);
+      LOG_PRINT(",");
+      LOG_PRINT(value);
     }
 
     startIndex = nextDelim + 1;
@@ -320,8 +344,8 @@ String parseTemperatureData(String data) {
       String value = data.substring(startIndex, nextDelim);
       outputData += ",";
       outputData += value;
-      Serial.print(",");
-      Serial.print(value);
+      LOG_PRINT(",");
+      LOG_PRINT(value);
     }
 
     startIndex = nextDelim + 1;
@@ -358,8 +382,8 @@ void transmitI2C(String data) {
 
     byte error = Wire.endTransmission();
     if (error != 0) {
-      Serial.print("I2C Transmission error: ");
-      Serial.println(error);
+      LOG_PRINT("I2C Transmission error: ");
+      LOG_PRINTLN(error);
     }
 
     if (chunkEnd < dataLength) {

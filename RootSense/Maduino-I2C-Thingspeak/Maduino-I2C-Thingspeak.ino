@@ -32,7 +32,7 @@
 #define LTE_FLIGHT_PIN 7   // LOW = normal operation
 /* ------------------------------------------------------------------- */
 
-const bool DEBUG = true;            // echo AT chatter to SerialUSB
+const bool DEBUG = false;            // echo AT chatter to SerialUSB
 
 /* ---------- Upload queue (SPSC ring buffer) ------------------------ */
 static const uint8_t QUEUE_CAPACITY = 8;
@@ -334,11 +334,11 @@ void uploadData(const String &payload) {
   /* ---- Build ThingSpeak URL -------------------------------------- */
   String apiKey = API_WRITE_KEY;
   String url = "http://api.thingspeak.com/update?api_key=" + apiKey;
-  url += "&field1=" + now.yr + "-" + now.mon + "-" + now.day;
-  url += "&field2=" + now.hr + ":" + now.min + ":" + now.sec;
-  url += "&field3=0.000000,0.000000,0.0";
-  url += "&field4=" + data.tempData;
-  url += "&field5=" + data.moistData;
+  url += "&field1=" + data.meshName;
+  url += "&field2=" + now.yr + "-" + now.mon + "-" + now.day;
+  url += "&field3=" + now.hr + ":" + now.min + ":" + now.sec;
+  url += "&field4=" + data.moistData;
+  url += "&field5=" + data.tempData;
 
   SerialUSB.println("\n[HTTP] » " + url);
 
