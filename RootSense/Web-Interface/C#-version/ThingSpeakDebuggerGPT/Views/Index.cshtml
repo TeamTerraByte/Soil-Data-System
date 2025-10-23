@@ -1,0 +1,29 @@
+@model ThingSpeakDebugger.Models.ThingSpeakQueryViewModel
+<h2>ThingSpeak Debugger</h2>
+<form method="post">
+    <label>Channel ID:</label>
+    <input asp-for="ChannelId" type="number" required />
+    <label>API Key:</label>
+    <input asp-for="ApiKey" type="text" />
+    <button type="submit">Query</button>
+</form>
+
+@if (!string.IsNullOrEmpty(Model.Error)) {
+    <p style="color:red">@Model.Error</p>
+}
+
+@if (Model.Response?.Feeds != null) {
+    <table border="1">
+        <thead><tr><th>ID</th><th>Created</th><th>Field1</th><th>Field2</th></tr></thead>
+        <tbody>
+        @foreach (var f in Model.Response.Feeds) {
+            <tr>
+                <td>@f.EntryId</td>
+                <td>@f.CreatedAt</td>
+                <td>@f.Field1</td>
+                <td>@f.Field2</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}

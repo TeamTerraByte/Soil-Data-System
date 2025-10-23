@@ -1,0 +1,65 @@
+@model ThingSpeakDebugger.Models.ThingSpeakQueryViewModel
+@{
+    Layout = null;
+}
+<h2>ThingSpeak Debugger</h2>
+<form method="post">
+    <div>
+        <label asp-for="ChannelId"></label>
+        <input asp-for="ChannelId" type="number" required />
+    </div>
+    <div>
+        <label asp-for="ApiKey"></label>
+        <input asp-for="ApiKey" type="text" />
+    </div>
+    <div>
+        <label asp-for="Results"></label>
+        <input asp-for="Results" type="number" min="1" max="8000" />
+    </div>
+    <button type="submit">Query</button>
+</form>
+
+@if (!string.IsNullOrEmpty(Model.Error)) {
+    <p style="color:red">@Model.Error</p>
+}
+
+@if (Model.Response?.Channel != null) {
+    <h3>Channel: @Model.Response.Channel.Name (#@Model.Response.Channel.Id)</h3>
+}
+
+@if (Model.Response?.Feeds != null && Model.Response.Feeds.Count > 0) {
+    <table border="1" cellpadding="4" cellspacing="0">
+        <thead>
+            <tr>
+                <th>Entry</th>
+                <th>Created</th>
+                <th>@(Model.Response.Channel?.Field1Name ?? "field1")</th>
+                <th>@(Model.Response.Channel?.Field2Name ?? "field2")</th>
+                <th>@(Model.Response.Channel?.Field3Name ?? "field3")</th>
+                <th>@(Model.Response.Channel?.Field4Name ?? "field4")</th>
+                <th>@(Model.Response.Channel?.Field5Name ?? "field5")</th>
+                <th>@(Model.Response.Channel?.Field6Name ?? "field6")</th>
+                <th>@(Model.Response.Channel?.Field7Name ?? "field7")</th>
+                <th>@(Model.Response.Channel?.Field8Name ?? "field8")</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var f in Model.Response.Feeds) {
+                <tr>
+                    <td>@f.EntryId</td>
+                    <td>@f.CreatedAt</td>
+                    <td>@f.Field1</td>
+                    <td>@f.Field2</td>
+                    <td>@f.Field3</td>
+                    <td>@f.Field4</td>
+                    <td>@f.Field5</td>
+                    <td>@f.Field6</td>
+                    <td>@f.Field7</td>
+                    <td>@f.Field8</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+} else if (Model.Response?.Feeds != null) {
+    <p>No feeds returned.</p>
+}

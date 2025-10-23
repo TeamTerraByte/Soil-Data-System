@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ThingSpeak Viewer (Static)</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #111827;
+    --muted: #6b7280;
+    --text: #e5e7eb;
+    --accent: #22d3ee;
+    --ok: #10b981;
+    --err: #ef4444;
+    --border: #1f2937;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, "Noto Color Emoji";
+    background: linear-gradient(180deg, #0b1020, var(--bg));
+    color: var(--text);
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  h1 { font-weight: 700; letter-spacing: 0.2px; margin: 0 0 12px; }
+  p.caption { margin: 0 0 18px; color: var(--muted); }
+  .card {
+    background: linear-gradient(180deg, #0b1224, var(--card));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; align-items: end; }
+  .col-3 { grid-column: span 3; }
+  .col-2 { grid-column: span 2; }
+  .col-4 { grid-column: span 4; }
+  .col-6 { grid-column: span 6; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  input[type="text"], input[type="number"] {
+    width: 100%; background: #0b1224; color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    outline: none; transition: border .2s ease;
+  }
+  input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); }
+  .check {
+    display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px;
+  }
+  button {
+    appearance: none; border: 1px solid transparent; border-radius: 12px;
+    padding: 10px 14px; background: var(--accent); color: #042c2f; font-weight: 700;
+    cursor: pointer; transition: transform .05s ease, filter .2s ease; width: 100%;
+  }
+  button:hover { filter: brightness(1.06); }
+  button:active { transform: translateY(1px); }
+  button[disabled] { cursor: progress; filter: grayscale(.5) brightness(.8); }
+  .actions { display: flex; gap: 10px; }
+  .actions button.secondary { background: #1f2937; color: var(--text); border-color: var(--border); }
+  .status { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+
+  .table-wrap {
+    margin-top: 18px; overflow: auto; border: 1px solid var(--border);
+    border-radius: 12px; background: #0b1224;
+  }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 720px; }
+  thead th {
+    position: sticky; top: 0; background: #0e162e; color: #cbd5e1;
+    padding: 10px 12px; font-size: 13px; text-align: left; border-bottom: 1px solid var(--border);
+    user-select: none; cursor: pointer;
+  }
+  thead th .hint { color: var(--muted); font-weight: 500; font-size: 12px; margin-left: 8px; }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid #0e1a39; font-size: 13px; }
+  tbody tr:nth-child(even) td { background: #0c142b; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .pill.ok { background: rgba(16,185,129,.15); color: var(--ok); border: 1px solid rgba(16,185,129,.3); }
+  .pill.err { background: rgba(239,68,68,.15); color: var(--err); border: 1px solid rgba(239,68,68,.3); }
+  .small { font-size: 12px; color: var(--muted); }
+  .sr { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>ThingSpeak Viewer</h1>
+    <p class="caption">Static page: enter <strong>Channel ID</strong> and <strong>Read API Key</strong>, then fetch recent feeds. No libraries required.</p>
+
+    <div class="card" role="region" aria-label="Query form">
+      <div class="row">
+        <div class="col-3">
+          <label for="channelId">Channel ID</label>
+          <input id="channelId" type="text" inputmode="numeric" placeholder="e.g. 123456" autocomplete="off" />
+        </div>
+        <div class="col-4">
+          <label for="apiKey">Read API Key</label>
+          <input id="apiKey" type="text" placeholder="e.g. ABCDEF1234567890" autocomplete="off" />
+        </div>
+        <div class="col-2">
+          <label for="results">Results</label>
+          <input id="results" type="number" min="1" max="8000" value="100" />
+        </div>
+        <div class="col-3">
+          <label class="sr" for="includeLoc">Options</label>
+          <div class="check"><input id="includeLoc" type="checkbox" /> include location</div>
+          <div class="check"><input id="includeStatus" type="checkbox" /> include channel status</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <div class="col-6 actions">
+          <button id="btnFetch">Fetch</button>
+          <button id="btnExport" class="secondary" title="Export table to CSV">Export CSV</button>
+          <button id="btnClear" class="secondary" title="Clear table">Clear</button>
+        </div>
+        <div class="col-6">
+          <div id="status" class="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="meta" class="small" style="margin:10px 2px 4px;"></div>
+
+    <div class="table-wrap" role="region" aria-label="Results table">
+      <table id="table">
+        <thead><tr id="thead"></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const BASE = "https://api.thingspeak.com/channels/{id}/feeds.json";
+
+const els = {
+  channelId: document.getElementById("channelId"),
+  apiKey: document.getElementById("apiKey"),
+  results: document.getElementById("results"),
+  includeLoc: document.getElementById("includeLoc"),
+  includeStatus: document.getElementById("includeStatus"),
+  btnFetch: document.getElementById("btnFetch"),
+  btnExport: document.getElementById("btnExport"),
+  btnClear: document.getElementById("btnClear"),
+  status: document.getElementById("status"),
+  meta: document.getElementById("meta"),
+  thead: document.getElementById("thead"),
+  tbody: document.getElementById("tbody"),
+};
+
+let curRows = [];
+let curCols = [];
+let sortState = { key: null, dir: 1 };
+
+function setStatus(msg, kind = "") {
+  els.status.textContent = msg || "";
+  els.status.className = "status" + (kind ? " " + kind : "");
+}
+function setMeta(channel) {
+  if (!channel || !Object.keys(channel).length) { els.meta.textContent = ""; return; }
+  const name = channel.name || "(unnamed)";
+  const id = channel.id || "";
+  const fields = Array.from({length: 8}, (_,i)=> channel["field"+(i+1)]).filter(Boolean);
+  const updated = channel.updated_at ? new Date(channel.updated_at).toISOString() : "";
+  els.meta.innerHTML = `<span class="small">Channel <strong>#${id}</strong>: <strong>${escapeHtml(name)}</strong> — ${fields.length} field(s) — updated ${escapeHtml(updated)}</span>`;
+}
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, m => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+  })[m]);
+}
+
+async function fetchFeeds() {
+  const id = els.channelId.value.trim();
+  const key = els.apiKey.value.trim();
+  const results = Math.max(1, Math.min(8000, parseInt(els.results.value || "100", 10)));
+  const includeLoc = els.includeLoc.checked;
+  const includeStatus = els.includeStatus.checked;
+
+  if (!/^[0-9]+$/.test(id)) { setStatus("Channel ID must be a positive integer.", "err"); return; }
+  if (!key) { setStatus("Read API key is required.", "err"); return; }
+
+  els.btnFetch.disabled = true; setStatus("Fetching…");
+  try {
+    const url = BASE.replace("{id}", encodeURIComponent(id)) + "?" + new URLSearchParams({
+      api_key: key,
+      results: String(results),
+      ...(includeLoc ? { location: "true" } : {})
+    }).toString();
+    const resp = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+    const data = await resp.json();
+    buildTable(data, { includeLoc, includeStatus });
+    setStatus(`Loaded ${curRows.length} row(s).`, "ok");
+  } catch (err) {
+    console.error(err);
+    setStatus(`Failed to load: ${err.message}`, "err");
+  } finally {
+    els.btnFetch.disabled = false;
+  }
+}
+
+function buildTable(data, opts) {
+  const channel = data.channel || {};
+  const feeds = Array.isArray(data.feeds) ? data.feeds : [];
+  setMeta(channel);
+
+  // Derive columns from channel field names (field1..field8)
+  const cols = [];
+  cols.push({ key: "entry_id", label: "Entry ID" });
+  cols.push({ key: "created_at", label: "Created (UTC)" });
+  for (let i = 1; i <= 8; i++) {
+    const key = "field" + i;
+    if (channel[key] || feeds.some(f => f[key] != null)) {
+      cols.push({ key, label: channel[key] ? `${channel[key]} (field${i})` : `field${i}` });
+    }
+  }
+  if (opts.includeLoc) {
+    cols.push({ key: "latitude", label: "Latitude" });
+    cols.push({ key: "longitude", label: "Longitude" });
+    cols.push({ key: "elevation", label: "Elevation" });
+  }
+  if (opts.includeStatus) {
+    cols.push({ key: "status", label: "Status" });
+  }
+  curCols = cols;
+
+  // Render header
+  els.thead.innerHTML = "";
+  cols.forEach(col => {
+    const th = document.createElement("th");
+    th.textContent = col.label;
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    hint.textContent = "↕";
+    th.appendChild(hint);
+    th.addEventListener("click", () => sortBy(col.key));
+    els.thead.appendChild(th);
+  });
+
+  // Prepare rows
+  curRows = feeds.map(f => ({
+    ...f,
+    created_at: f.created_at || "",
+    entry_id: f.entry_id ?? "",
+  }));
+
+  renderBody(curRows);
+  sortState = { key: "created_at", dir: -1 };
+  sortBy("created_at", true);
+}
+
+function renderBody(rows) {
+  const frag = document.createDocumentFragment();
+  rows.forEach(row => {
+    const tr = document.createElement("tr");
+    curCols.forEach(col => {
+      const td = document.createElement("td");
+      let val = row[col.key];
+      if (val == null) val = "";
+      if (col.key === "status") {
+        const span = document.createElement("span");
+        const txt = String(val);
+        const isErr = /error|fail|bad|denied|invalid/i.test(txt);
+        span.className = "pill " + (isErr ? "err" : "ok");
+        span.textContent = txt || "ok";
+        td.appendChild(span);
+      } else {
+        td.textContent = String(val);
+      }
+      tr.appendChild(td);
+    });
+    frag.appendChild(tr);
+  });
+  els.tbody.innerHTML = "";
+  els.tbody.appendChild(frag);
+}
+
+function sortBy(key, initial = false) {
+  if (!initial) {
+    if (sortState.key === key) sortState.dir *= -1;
+    else { sortState.key = key; sortState.dir = 1; }
+  }
+  const dir = sortState.dir;
+  const rows = [...curRows];
+  rows.sort((a, b) => cmp(a[key], b[key]) * dir);
+  renderBody(rows);
+}
+
+function cmp(a, b) {
+  if (typeof a === "string" && /^\d{4}-\d{2}-\d{2}T/.test(a)) {
+    const da = Date.parse(a) || 0;
+    const db = Date.parse(b) || 0;
+    return da - db;
+  }
+  const na = parseFloat(a); const nb = parseFloat(b);
+  const bothNum = !Number.isNaN(na) && !Number.isNaN(nb);
+  if (bothNum) return na - nb;
+  return String(a).localeCompare(String(b));
+}
+
+function exportCsv() {
+  if (!curRows.length) { setStatus("Nothing to export.", "err"); return; }
+  const headers = curCols.map(c => c.label);
+  const keys = curCols.map(c => c.key);
+  let csv = "";
+  csv += headers.map(safeCsv).join(",") + "\r\n";
+  for (const r of curRows) {
+    csv += keys.map(k => safeCsv(r[k])).join(",") + "\r\n";
+  }
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const now = new Date().toISOString().replaceAll(":", "-");
+  a.download = `thingspeak_feeds_${now}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function safeCsv(v) {
+  const s = String(v ?? "");
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function clearTable() {
+  curRows = []; curCols = []; sortState = { key: null, dir: 1 };
+  els.thead.innerHTML = ""; els.tbody.innerHTML = ""; els.meta.textContent = "";
+  setStatus("Cleared.", "ok");
+}
+
+els.btnFetch.addEventListener("click", fetchFeeds);
+els.btnExport.addEventListener("click", exportCsv);
+els.btnClear.addEventListener("click", clearTable);
+
+[els.channelId, els.apiKey, els.results].forEach(el => {
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") fetchFeeds();
+  });
+});
+</script>
+</body>
+</html>
