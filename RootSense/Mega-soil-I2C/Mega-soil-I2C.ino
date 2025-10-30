@@ -27,8 +27,8 @@
   #define LOG_WRITE(...)
 #endif
 
-// ---------------- SDI-12 & I2C ----------------
-#define DATA_PIN 51
+// ------ ---------- SDI-12 & I2C ----------------
+#define DATA_PIN 11
 #define SLAVE_ADDRESS 0x08
 
 SDI12 mySDI12(DATA_PIN);

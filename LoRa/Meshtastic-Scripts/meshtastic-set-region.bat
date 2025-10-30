@@ -1,0 +1,1 @@
+meshtastic --set lora.region US
