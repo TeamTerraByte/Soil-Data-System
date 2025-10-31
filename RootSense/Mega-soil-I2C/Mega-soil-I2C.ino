@@ -183,10 +183,6 @@ String parseLoRa(String data) {
 // Sends @nodes and waits until we get `requiredCount` lines that begin with "@hub"
 // or until `timeoutMs` is reached. Each valid response is printed and forwarded over I2C.
 uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
-  // I don't know why queryNumber is not updating, but the LoRa upload seems to work fine
-  // when I have the 5V line, the Maduino plugged into the big battery and the Arduino Mega plugged
-  // into my laptop. I wonder if it is a power issue. Maybe the Mega is restarting, which resets the 
-  // the value of queryNumber
   meshSendLine(String(NODES_QUERY) + " " + String(queryNumber));  
 
   uint8_t got = 0;
