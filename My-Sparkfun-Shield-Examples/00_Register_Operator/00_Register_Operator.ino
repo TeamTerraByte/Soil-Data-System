@@ -31,7 +31,7 @@
 // Shield RX/TX pins:
 // Note: if you're using an Arduino board with a dedicated hardware
 // serial port, comment out the line below. (Also see note in setup)
-// SoftwareSerial lteSerial(8, 9);
+SoftwareSerial lteSerial(8, 9);
 
 // Create a LTE_Shield object to be used throughout the sketch:
 LTE_Shield lte;
@@ -41,7 +41,7 @@ LTE_Shield lte;
 // For example, on a SAMD21 board SerialMonitor can be changed to SerialUSB
 // and LTEShieldSerial can be set to Serial1 (hardware serial port on 0/1)
 #define SerialMonitor Serial
-#define LTEShieldSerial Serial2
+#define LTEShieldSerial lteSerial
 
 // Network operator can be set to either:
 // MNO_SW_DEFAULT -- DEFAULT
@@ -49,13 +49,18 @@ LTE_Shield lte;
 // MNO_VERIZON -- Verizon
 // MNO_TELSTRA -- Telstra
 // MNO_TMO -- T-Mobile
-const mobile_network_operator_t MOBILE_NETWORK_OPERATOR = MNO_TMO;
+const mobile_network_operator_t MOBILE_NETWORK_OPERATOR = MNO_ATT;
 const String MOBILE_NETWORK_STRINGS[] = {"Default", "SIM_ICCD", "AT&T", "VERIZON", 
   "TELSTRA", "T-Mobile", "CT"};
 
 // APN -- Access Point Name. Gateway between GPRS MNO
 // and another computer network. E.g. "hologram
-const String APN = "fast.t-mobile.com";
+// const String APN = "m2m.com.attz";
+// const String APN = "NXTGENPHONE";
+const String APN = "Broadband";
+// const String APN = "ENHANCEDPHONE";
+// const String APN = "m2m64.com.attz";
+
 
 // This defines the size of the ops struct array. Be careful making
 // this much bigger than ~5 on an Arduino Uno. To narrow the operator
@@ -122,10 +127,6 @@ void setup() {
       SerialMonitor.println(F("Error setting APN. Try cycling power to the shield/Arduino."));
       while (1) ;
     }
-
-    // Wait for user to press button before initiating network scan.
-    SerialMonitor.println(F("Press any key scan for networks.."));
-    serialWait();
 
     SerialMonitor.println(F("Scanning for operators...this may take up to 3 minutes\r\n"));
     // lte.getOperators takes in a operator_stats struct pointer and max number of
