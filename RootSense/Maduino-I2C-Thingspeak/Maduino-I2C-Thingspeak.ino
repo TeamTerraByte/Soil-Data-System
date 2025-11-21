@@ -24,7 +24,6 @@
 /* ---------- User config -------------------------------------------- */
 #define SLAVE_ADDRESS  0x08                 // I²C address of this Maduino
 // #define APN            "fast.t-mobile.com"  // old Carrier APN
-// #define APN            "PHONE"  // new Carrier APN (AT&T)
 #define APN            "m2m.com.attz"  // new Carrier APN (AT&T)
 /* ------------------------------------------------------------------- */
 
@@ -335,7 +334,7 @@ void ltePowerSequence() {
   delay(10000); // shorter initial wait (was 30 seconds)
   waitForModemReady();
 
-  sendAT("ATI", 120000);  // det device information
+  //sendAT("ATI", 120000);  // Get device information
   // Put modem in automatic LTE search mode (recommended in SIM7600 docs) :contentReference[oaicite:7]{index=7}
   sendAT("AT+CFUN=1", 9000);
   sendAT("AT+CNMP=2", 9000);   // automatic mode (you *could* also try LTE-only: AT+CNMP=13)
