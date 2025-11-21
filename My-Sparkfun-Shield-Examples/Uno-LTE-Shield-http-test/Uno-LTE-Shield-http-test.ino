@@ -51,7 +51,6 @@ void setup() {
   sendAT("AT+UHTTP=0,1," + domain);
   sendAT("AT+UHTTP=0,5,80");
   sendAT("AT+UHTTP=0,6,0");
-  // sendAT("AT+UHTTPAC=0,4,\"Content-Type: application/x-www-form-urlencoded\"");  // operation not supported
   sendAT("AT+UDWNFILE=\"post.txt\"," + String(data.length()));
   sendAT(data);
   sendAT("AT+UHTTPC=0,4,\"/update\",\"resp.txt\",\"post.txt\",0", 60000);  // I guess it should be a post request?
