@@ -14,7 +14,7 @@
 #define MAX_PAYLOAD_LEN 120    // Safety: keep below Uno's 128-byte buffer
 
 // How often to send updates (ThingSpeak minimum is ~15 seconds)
-const unsigned long SEND_INTERVAL_MS = 20000;
+const unsigned long SEND_INTERVAL_MS = 120000;
 unsigned long lastSend = 0;
 
 void setup() {
@@ -28,7 +28,7 @@ void setup() {
   Wire.begin(21, 22);
   Wire.setClock(100000);
 
-  Serial.println(F("ESP32 I2C master ready. Will send field data to Uno at 0x08."));
+  Serial.println(F("ESP32 I2C master ready. Will send field data to Uno at 0x36"));
 }
 
 void loop() {
