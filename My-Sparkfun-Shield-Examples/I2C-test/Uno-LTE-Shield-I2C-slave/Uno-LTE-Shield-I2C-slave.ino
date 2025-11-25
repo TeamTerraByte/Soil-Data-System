@@ -3,8 +3,10 @@
   SparkFun LTE shield example.
 
   Modified to:
-  - Act as an I2C slave (address 0x08).
-  - Accept a string from I2C master.
+  - Act as an I2C slave (address 0x36).
+  - Accept a string from I2C master, possibly in multiple 30-byte chunks.
+  - Treat the message as complete when the sequence "!F" is received,
+    even if '!' and 'F' arrive in different chunks.
   - Upload that string to ThingSpeak using the existing HTTP format.
 */
 
@@ -18,14 +20,13 @@
 #define DEBUG true
 
 // ---------- I2C configuration ----------
-#define I2C_SLAVE_ADDR 0x36
+#define I2C_SLAVE_ADDR   0x36
+#define I2C_BUFFER_SIZE  128  // Max length of accumulated I2C string (including null terminator)
 
-// Max length of I2C string (including null terminator)
-#define I2C_BUFFER_SIZE 128
-
-volatile bool i2cMessageReady = false;
-volatile uint8_t i2cLen = 0;
-volatile char i2cRaw[I2C_BUFFER_SIZE];
+// Volatile because modified in ISR
+volatile bool    i2cMessageReady = false;
+volatile uint8_t i2cLen          = 0;
+volatile char    i2cRaw[I2C_BUFFER_SIZE];
 
 // ---------- Global LTE / Serial ----------
 SoftwareSerial lteSerial(8, 9);  // RX, TX for LTE shield
@@ -54,7 +55,6 @@ void setup() {
   // Basic LTE / network setup (same as your original code)
   sendAT("AT");                // check that modem is responsive
   sendAT("AT+CMEE=2");
-  // Automatically configures the module to be compliant to the requirements of various MNOs.
   sendAT("AT+UMNOPROF?");      // should return 2 for ATT
   sendAT("AT+CEREG?");         // verify RAT registration, should show 0,1
   sendAT("AT+COPS?");          // check operator
@@ -62,10 +62,6 @@ void setup() {
   sendAT("AT+CGATT=1");        // ensure PS attached
   sendAT("AT+CGACT=1,1");      // activate PDP context 1
   sendAT("AT+CGPADDR=1");      // confirm obtained IP address
-
-  // Optional: send a one-time test update using your original placeholder values
-  // String initialFields = "field1=field1&field2=field2&field3=field3&field4=field4&field5=field5";
-  // sendToThingSpeak(initialFields);
 
   SerialMonitor.println(F("Ready! I2C slave + LTE passthrough.\r\n"));
 }
@@ -86,12 +82,16 @@ void loop() {
   if (i2cMessageReady) {
     // Safely copy the volatile buffer into a local buffer
     noInterrupts();
-    char localBuf[I2C_BUFFER_SIZE];
+    char    localBuf[I2C_BUFFER_SIZE];
     uint8_t len = i2cLen;
     if (len >= I2C_BUFFER_SIZE) len = I2C_BUFFER_SIZE - 1;
     memcpy(localBuf, (const void *)i2cRaw, len);
     localBuf[len] = '\0';
+
+    // Reset for next message
     i2cMessageReady = false;
+    i2cLen          = 0;
+    i2cRaw[0]       = '\0';
     interrupts();
 
     String fieldsPart = String(localBuf);
@@ -105,21 +105,53 @@ void loop() {
 
 // =============================================================
 // I2C receive handler
-// Called when the master sends data to this slave
+// Called when the master sends data to this slave.
+// Data may arrive in multiple 30-byte chunks.
+// We append to i2cRaw and mark complete when we see "!F".
 // =============================================================
 void onI2CReceive(int numBytes) {
-  uint8_t idx = 0;
-  while (Wire.available() && idx < (I2C_BUFFER_SIZE - 1)) {
+  // If a message is already ready and main loop hasn’t consumed it yet,
+  // we can either discard new bytes or start overwriting.
+  // Here we'll discard until main loop resets i2cLen.
+  if (i2cMessageReady) {
+    while (Wire.available()) {
+      (void)Wire.read();
+    }
+    return;
+  }
+
+  uint8_t curLen = i2cLen;
+
+  // Append new bytes to existing buffer, stripping CR/LF
+  while (Wire.available() && curLen < (I2C_BUFFER_SIZE - 1)) {
     char c = Wire.read();
 
-    // Strip CR/LF so the payload is clean
-    if (c != '\r' && c != '\n') {
-      i2cRaw[idx++] = c;
+    if (c == '\r' || c == '\n') {
+      continue;  // ignore CR/LF
+    }
+
+    i2cRaw[curLen++] = c;
+  }
+
+  // Null-terminate current buffer
+  i2cRaw[curLen] = '\0';
+  i2cLen         = curLen;
+
+  // Look for "!F" anywhere in the buffer
+  if (curLen >= 2) {
+    for (uint8_t i = 0; i < (curLen - 1); i++) {
+      if (i2cRaw[i] == '!' && i2cRaw[i + 1] == 'F') {
+        // Truncate message at the '!' so "!F" is not included
+        i2cRaw[i] = '\0';
+        i2cLen    = i;
+        i2cMessageReady = true;
+        break;
+      }
     }
   }
-  i2cRaw[idx] = '\0';
-  i2cLen = idx;
-  i2cMessageReady = true;
+
+  // If buffer filled without term, future chunks will continue appending
+  // until either "!F" is found or the buffer saturates.
 }
 
 // =============================================================
