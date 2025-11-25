@@ -52,13 +52,13 @@ void setup() {
     SerialMonitor.println(F("LTE Shield connected!"));
   }
 
-  // Basic LTE / network setup (same as your original code)
-  sendAT("AT");                // check that modem is responsive
-  sendAT("AT+CMEE=2");
-  sendAT("AT+UMNOPROF?");      // should return 2 for ATT
-  sendAT("AT+CEREG?");         // verify RAT registration, should show 0,1
-  sendAT("AT+COPS?");          // check operator
-  sendAT("AT+CSQ");            // signal quality RSSI
+  // Basic LTE / network setup
+  // sendAT("AT");                // check that modem is responsive
+  // sendAT("AT+CMEE=2");         // enable verbose error codes
+  // sendAT("AT+UMNOPROF?");      // should return 2 for ATT
+  // sendAT("AT+CEREG?");         // verify RAT registration, should show 0,1
+  // sendAT("AT+COPS?");          // check operator
+  // sendAT("AT+CSQ");            // signal quality RSSI
   sendAT("AT+CGATT=1");        // ensure PS attached
   sendAT("AT+CGACT=1,1");      // activate PDP context 1
   sendAT("AT+CGPADDR=1");      // confirm obtained IP address
