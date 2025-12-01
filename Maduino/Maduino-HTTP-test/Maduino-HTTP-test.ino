@@ -68,6 +68,7 @@ String sendData(String command, const int timeout, boolean debug) {
 }
 
 void ltePowerSequence(){
+  Serial.println("Init LTE Power Sequence...");
   delay(100);
   digitalWrite(LTE_RESET_PIN, HIGH);
   delay(2000);
@@ -89,6 +90,6 @@ void ltePowerSequence(){
   sendData("AT+CREG?", 3000, DEBUG);
   sendData("AT+CGATT=1", 1000, DEBUG);
   sendData("AT+CGACT=1,1", 1000, DEBUG);
-  sendData("AT+CGDCONT=1,\"IP\",\"fast.t-mobile.com\"", 1000, DEBUG);
+  sendData("AT+CGDCONT=1,\"IP\",\"m2m.com.attz\"", 1000, DEBUG);
   sendData("AT+CGPADDR=1", 3000, DEBUG);          // show pdp address
 }

@@ -64,12 +64,16 @@ void ltePowerSequence() {
   waitForModemReady();
 
   //sendAT("ATI", 120000);  // Get device information
-  // Put modem in automatic LTE search mode (recommended in SIM7600 docs) :contentReference[oaicite:7]{index=7}
-  sendAT("AT+CFUN=1", 9000);
-  //sendAT("AT+CNMP=2", 9000);   // automatic mode (you *could* also try LTE-only: AT+CNMP=13)
-  sendAT("AT+CNMP=13", 9000);  
+  // Put modem in automatic LTE search mode (recommended in SIM7600 docs)
+  sendAT("AT+CNMP=2", 9000);  // automatic mode (you *could* also try LTE-only: AT+CNMP=38)
+  sendAT("AT+CFUN=1,1");      // soft reset the modem
+  waitForModemReady();
+  sendAT("AT+CMEE=2");        // Enable verbose errors  
+  sendAT("AT+CEREG=2");       // Enable extended net reg and location info unsolicited
+  sendAT("AT+CFUN=1", 9000);  // Set full functionality
 
-  sendAT("AT+CSQ", 5000);
+
+  sendAT("AT+CESQ", 5000);  // Check signal quality
 
   if (!waitForRegistration()) {
     SerialUSB.println(F("! No network registration – aborting LTE setup"));
