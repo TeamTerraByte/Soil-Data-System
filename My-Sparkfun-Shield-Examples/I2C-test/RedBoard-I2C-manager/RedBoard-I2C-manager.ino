@@ -12,7 +12,7 @@
 
 // How often to send updates (ThingSpeak minimum is ~15 seconds)
 const unsigned long SEND_INTERVAL_MS = 60000;
-unsigned long lastSend = 0;
+unsigned long lastSend = 60000;
 
 void setup() {
   Serial.begin(115200);
