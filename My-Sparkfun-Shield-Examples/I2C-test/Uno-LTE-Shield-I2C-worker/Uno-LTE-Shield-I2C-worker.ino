@@ -271,7 +271,7 @@ void sendToThingSpeak(const String &fieldsPart) {
   SerialMonitor.print(F("ThingSpeak POST body: "));
   SerialMonitor.println(data);
 
-  // Configure HTTP profile (same as your original sequence)
+  // Configure HTTP profile
   sendAT(String(F("AT+UHTTP=0,1,")) + domain);
   sendAT(F("AT+UHTTP=0,5,80"));
   sendAT(F("AT+UHTTP=0,6,0"));
