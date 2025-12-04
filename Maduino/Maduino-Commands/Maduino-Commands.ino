@@ -17,6 +17,7 @@ void setup() {
   SerialUSB.begin(115200);
   Serial1.begin(115200);
 
+  powerOnModem();
   waitForModemReady(30000);
 
   SerialUSB.println("\nSend commands to the Serial1 terminal");
@@ -34,6 +35,24 @@ void loop() {
         String response = Serial1.readStringUntil('\n');
         SerialUSB.println(response);
     }
+}
+
+void powerOnModem(){
+  pinMode(LTE_RESET_PIN, OUTPUT);
+  pinMode(LTE_PWRKEY_PIN, OUTPUT);
+  pinMode(LTE_FLIGHT_PIN, OUTPUT);
+
+  delay(100);
+  digitalWrite(LTE_RESET_PIN, HIGH);
+  delay(2000);
+  digitalWrite(LTE_RESET_PIN, LOW);
+
+  delay(100);
+  digitalWrite(LTE_PWRKEY_PIN, HIGH);
+  delay(2000);
+  digitalWrite(LTE_PWRKEY_PIN, LOW);
+
+  digitalWrite(LTE_FLIGHT_PIN, LOW); // Normal mode
 }
 
 

@@ -276,9 +276,14 @@ void sendToThingSpeak(const String &fieldsPart) {
   sendAT(F("AT+UHTTP=0,5,80"));
   sendAT(F("AT+UHTTP=0,6,0"));
 
+  // Delete the old file
+  sendAT(F("AT+UDELFILE=\"post.txt\""));
+
   // Upload POST body into post.txt on the module
   sendAT(String(F("AT+UDWNFILE=\"post.txt\",")) + String(data.length()));
   sendAT(data);
+
+  sendAT(F("AT+URDFILE=\"post.txt\""));  // read the file for confirmation
 
   // Perform HTTP POST: /update
   String resp = sendAT(F("AT+UHTTPC=0,4,\"/update\",\"resp.txt\",\"post.txt\",0"), 60000);
