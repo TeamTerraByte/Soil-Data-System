@@ -287,12 +287,12 @@ void sendToThingSpeak(const String &fieldsPart) {
   sendAT(F("AT+URDFILE=\"post.txt\""));  // read the file for confirmation
 
   // Perform HTTP POST: /update
-  String resp = sendAT(F("AT+UHTTPC=0,4,\"/update\",\"resp.txt\",\"post.txt\",0"), 60000, DEBUG, true);
+  sendAT(F("AT+UHTTPC=0,4,\"/update\",\"resp.txt\",\"post.txt\",0"), 60000, DEBUG, true);
 
   // Read response file (optional but useful for debugging)
-  sendAT(F("AT+URDFILE=\"resp.txt\""));
+  String resp = sendAT(F("AT+URDFILE=\"resp.txt\""));
 
-  SerialMonitor.print(F("HTTP response raw: "));
+  SerialMonitor.print(F("HTTP response file: "));
   SerialMonitor.println(resp);
 }
 
