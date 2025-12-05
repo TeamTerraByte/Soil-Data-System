@@ -15,6 +15,7 @@
 // Click here to get the library: http://librarymanager/All#SparkFun_LTE_Shield_Arduino_Library
 #include <SparkFun_LTE_Shield_Arduino_Library.h>
 #include "secrets.h"
+#include <avr/wdt.h>
 
 #define SerialMonitor Serial
 #define DEBUG true
@@ -56,7 +57,7 @@ SoftwareSerial lteSerial(8, 9);  // RX, TX for LTE shield
 LTE_Shield     lte;
 
 // ---------- Forward declarations ----------
-String sendAT(const String &cmd, uint32_t timeout = 2000, bool dbg = DEBUG);
+String sendAT(const String &cmd, uint32_t timeout = 2000, bool dbg = DEBUG,  bool shortResp = false);
 void   sendToThingSpeak(const String &fieldsPart);
 void   onI2CReceive(int numBytes);
 void   printInfo(void);
@@ -286,7 +287,7 @@ void sendToThingSpeak(const String &fieldsPart) {
   sendAT(F("AT+URDFILE=\"post.txt\""));  // read the file for confirmation
 
   // Perform HTTP POST: /update
-  String resp = sendAT(F("AT+UHTTPC=0,4,\"/update\",\"resp.txt\",\"post.txt\",0"), 60000);
+  String resp = sendAT(F("AT+UHTTPC=0,4,\"/update\",\"resp.txt\",\"post.txt\",0"), 60000, DEBUG, true);
 
   // Read response file (optional but useful for debugging)
   sendAT(F("AT+URDFILE=\"resp.txt\""));
@@ -298,23 +299,38 @@ void sendToThingSpeak(const String &fieldsPart) {
 // =============================================================
 // Simple AT helper – sends a command & collects reply until timeout
 // =============================================================
-String sendAT(const String &cmd, uint32_t timeout, bool dbg) {
+String sendAT(const String &cmd, uint32_t timeout, bool dbg, bool shortResp) {
   lteSerial.println(cmd);
+
   uint32_t t0 = millis();
   String buffer;
+
   while (millis() - t0 < timeout) {
     while (lteSerial.available()) {
       char c = lteSerial.read();
       buffer += c;
+
+      // Early return if short response desired and "OK" appears
+      if (shortResp && buffer.indexOf(F("OK")) != -1) {
+        if (dbg) {
+          SerialMonitor.print(cmd);
+          SerialMonitor.print(F(" → "));
+          SerialMonitor.println(buffer);
+        }
+        return buffer;
+      }
     }
   }
+
   if (dbg) {
     SerialMonitor.print(cmd);
     SerialMonitor.print(F(" → "));
     SerialMonitor.println(buffer);
   }
+
   return buffer;
 }
+
 
 void printInfo(void) {
   String    currentApn = "";
