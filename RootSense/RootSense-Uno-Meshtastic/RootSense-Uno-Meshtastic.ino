@@ -1,6 +1,9 @@
 #include <SDI12.h>
 #include <AltSoftSerial.h>
 
+#define DEBUG true
+// #define DEBUG false
+
 AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
 SDI12 enviroPro(SOIL_SENSOR_PIN);
@@ -14,7 +17,7 @@ String lastTemp  = "Temp";
 
 void setup() {
   Serial.begin(9600);
-  if (true){  // Debug purposes
+  if (DEBUG){  // Debug purposes
     while(!Serial){
       delay(1000);
     }
