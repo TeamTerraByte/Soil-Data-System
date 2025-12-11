@@ -201,8 +201,8 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
 
         // Forward the line over I2C to the slave (keeps your existing pipeline)
         String parsed_line = parseLoRa(line);
-        LOG_PRINTLN(String("Transmitting over LTE: ") + parsed_line);
-        transmitI2C(parsed_line);
+        LOG_PRINTLN(String("NOT Transmitting over LTE: ") + parsed_line);
+        // transmitI2C(parsed_line); commented out because LTE subsystem not connected
       } else {
         // Still print other lines for visibility
         LOG_PRINT(F("[Mesh] Unfiltered: "));
@@ -239,8 +239,8 @@ void takeMeasurements() {
   delay(500);
   String st = measureTemperature();
   String payload = "hub\t" + sm + "\t" + st + "\n";
-  LOG_PRINTLN(String("Transmitting over LTE: ") + payload);
-  transmitI2C(payload);
+  LOG_PRINTLN(String("NOT Transmitting over LTE: ") + payload);
+  // transmitI2C(payload); commented out because LTE subsystem not connected
 }
 
 String measureSoilMoisture() {

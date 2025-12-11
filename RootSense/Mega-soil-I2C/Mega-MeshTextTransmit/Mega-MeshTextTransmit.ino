@@ -1,23 +1,22 @@
-#include <AltSoftSerial.h>
-
-AltSoftSerial meshSerial;  // RX = 8, TX = 9 on Arduino Uno
+// Using Arduino Mega hardware UART (Serial1)
+// RX1 = pin 19, TX1 = pin 18
 
 void setup() {
-  Serial.begin(9600);       // USB serial for debug
-  meshSerial.begin(38400);   // Must match Meshtastic serial baud
+  Serial.begin(9600);        // USB serial for debugging
+  Serial1.begin(38400);      // Meshtastic serial baud
 
   delay(500);
 
   Serial.println(F("Meshtastic TX demo: sending initial message..."));
-  sendMesh("Hello from Arduino Uno TX!");
+  sendMesh("Hello from Arduino Mega TX!");
 }
 
 void loop() {
-  // Periodically send a ping message
   static unsigned long last = 0;
   unsigned long now = millis();
 
-  if (now - last > 15000UL) {  // every 15 seconds
+  // Send every 15 seconds
+  if (now - last > 15000UL) {
     last = now;
     String msg = String("Ping ") + (now / 1000) + "s";
     sendMesh(msg);
@@ -26,8 +25,8 @@ void loop() {
 
 void sendMesh(const String &s) {
   // Meshtastic TEXTMSG mode: newline terminates the message
-  meshSerial.print(s);
-  meshSerial.print('\n');
+  Serial1.print(s);
+  Serial1.print('\n');
 
   Serial.print(F("Sent: "));
   Serial.println(s);

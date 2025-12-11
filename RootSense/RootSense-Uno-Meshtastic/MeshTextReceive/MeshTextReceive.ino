@@ -3,7 +3,7 @@
 AltSoftSerial meshSerial;  // RX = 8, TX = 9 on Arduino Uno
 
 void setup() {
-  Serial.begin(38400);       // USB serial for debug
+  Serial.begin(9600);       // USB serial for debug
   meshSerial.begin(38400);   // Must match Meshtastic serial baud
 
   delay(500);
