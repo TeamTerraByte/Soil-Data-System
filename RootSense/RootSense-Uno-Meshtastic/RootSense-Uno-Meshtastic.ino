@@ -43,7 +43,7 @@ void loop() {
   // Listen for inbound Meshtastic TEXTMSG lines
   checkMeshInbound();
 
-  takeMeasurements();  // debugging measurements
+  // takeMeasurements();  // debugging measurements
   
   delay(50); // normal delay for normal operation
   // delay(10000);  // long delay for debugging
