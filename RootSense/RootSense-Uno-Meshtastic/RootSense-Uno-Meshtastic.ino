@@ -45,8 +45,8 @@ void loop() {
 
   takeMeasurements();  // debugging measurements
   
-  // delay(50); // normal delay for normal operation
-  delay(10000);  // long delay for debugging
+  delay(50); // normal delay for normal operation
+  // delay(10000);  // long delay for debugging
 }
 
 void sendMesh(const String& s) {
