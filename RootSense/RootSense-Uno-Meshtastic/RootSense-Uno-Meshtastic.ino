@@ -43,7 +43,10 @@ void loop() {
   // Listen for inbound Meshtastic TEXTMSG lines
   checkMeshInbound();
 
-  delay(50);
+  takeMeasurements();  // debugging measurements
+  
+  // delay(50); // normal delay for normal operation
+  delay(10000);  // long delay for debugging
 }
 
 void sendMesh(const String& s) {
@@ -82,11 +85,12 @@ void checkMeshInbound() {
 
 bool initializeProbe() {
   String response = sendCommand("?!");
-  if (response.length() > 0) {
+  if ((response.length() == 1) && isalnum(response[0])) {
+    if (DEBUG) Serial.println("Setting probe address to " + response);
     probeAddress = response;
     return true;
   } else {
-    Serial.println(F("Soil Probe C not detected"));
+    Serial.println(F("Soil Probe not detected"));
     probeAddress = "C";
     return false;
   }
@@ -102,11 +106,11 @@ void measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
   String response = sendCommand(measureCommand);
   if (response.length() > 0) {
-    int measureTime = 3000;
-    if (response.length() >= 6) {
-      String timeStr = response.substring(0, 3);
-      measureTime = timeStr.toInt() * 1000 + 1000;
-    }
+    int measureTime = 2000;
+    // if (response.length() >= 6) {
+    //   String timeStr = response.substring(0, 3);
+    //   measureTime = timeStr.toInt() * 1000 + 1000;
+    // }
     delay(measureTime);
 
     String dataCommand = probeAddress + "D0!";
@@ -203,22 +207,27 @@ void parseTemperatureData(String data) {
 }
 
 String sendCommand(String command) {
+  if (DEBUG) {
+    Serial.println("Sending " + command + " to EnviroPro sensor");
+  }
   enviroPro.sendCommand(command);
-
+  
   String response = "";
   unsigned long startTime = millis();
-  const unsigned long timeout = 2000;
+  const unsigned long timeout = 3000;
 
   while (millis() - startTime < timeout) {
     if (enviroPro.available()) {
       char c = enviroPro.read();
-      if (c == '\n' || c == '\r') {
-        if (response.length() > 0) return response;
-      } else {
-        response += c;
-      }
+      response += c;
     }
     delay(10);
+  }
+
+  response.trim();
+  if (DEBUG){
+    Serial.println("EnviroPro response: " + response);
+    Serial.println("Response length: " + (String) response.length());
   }
   return response;
 }
