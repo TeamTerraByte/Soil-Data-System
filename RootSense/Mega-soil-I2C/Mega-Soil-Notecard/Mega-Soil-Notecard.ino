@@ -1,5 +1,5 @@
 #include <SDI12.h>
-#include <Wire.h>
+#include <Notecard.h>  // for LTE
 
 /* ==============================
    Logging macros (toggle/retarget)
@@ -27,12 +27,10 @@
   #define LOG_WRITE(...)
 #endif
 
-// ------ ---------- SDI-12 & I2C ----------------
+// ------ ---------- SDI-12 ----------------
 #define DATA_PIN 11
-#define SLAVE_ADDRESS 0x08
 
 SDI12 mySDI12(DATA_PIN);
-
 String probeAddress = "C";
 unsigned long lastMeasurement = 0;
 const unsigned long MEASUREMENT_INTERVAL = 180000; // 3 minutes
@@ -53,8 +51,8 @@ String measureSoilMoisture();
 String measureTemperature();
 String parseMoistureData(String data);
 String parseTemperatureData(String data);
-void transmitI2C(String data);
 bool initializeProbe();
+void uploadNote(String device, String moist, String temp);
 
 // Meshtastic helpers
 void meshBegin();
@@ -63,9 +61,30 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs);
 bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs);
 int queryNumber = 0;
 
+// LTE Notecard stuff
+#define productUID "edu.tamu.ag.jacob.poland:rootsense"
+Notecard notecard;
+void splitPayload(const String& input,
+                  String& device,
+                  String& moist,
+                  String& temp);
+
+
 void setup() {
+  delay(2500);
   LOG_BEGIN(9600);
-  Wire.begin();
+  
+  notecard.begin();
+
+  notecard.setDebugOutputStream(Serial);
+  {
+    J *req = notecard.newRequest("hub.set");
+    if (req != NULL) {
+      JAddStringToObject(req, "product", productUID);
+      JAddStringToObject(req, "mode", "continuous");
+      notecard.sendRequest(req);
+    }
+  }
 
   // Bring up Meshtastic serial
   meshBegin();
@@ -90,6 +109,7 @@ void setup() {
   LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
   LOG_PRINTLN(got);
 }
+
 
 void loop() {
   // Periodic SDI-12 measurement
@@ -118,12 +138,14 @@ void loop() {
   delay(100);
 }
 
+
 // ---------------- Meshtastic implementation ----------------
 void meshBegin() {
   Serial1.begin(MESH_BAUD);
   delay(100);
   LOG_PRINTLN(F("[Mesh] Serial1 started for Meshtastic."));
 }
+
 
 void meshSendLine(const String& line) {
   // TEXTMSG mode requires newline-terminated message
@@ -132,6 +154,7 @@ void meshSendLine(const String& line) {
   LOG_PRINT(F("[Mesh] Sent: "));
   LOG_PRINTLN(line);
 }
+
 
 // Reads one newline-terminated line from Serial1 with a small per-character timeout.
 // Returns true if a full line was read; false if timed out.
@@ -159,6 +182,8 @@ bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs) {
   }
 }
 
+
+// TODO: combine this with splitPayload
 String parseLoRa(String data) {
   // Find the position of ':' which separates the node ID from the rest
   int colonIndex = data.indexOf(':');
@@ -180,6 +205,24 @@ String parseLoRa(String data) {
   return nodeID + '\t' + payload;
 }
 
+
+void splitPayload(const String& input,
+                  String& device,
+                  String& moist,
+                  String& temp)
+{
+  int t1 = input.indexOf('\t');
+  if (t1 == -1) return;
+
+  int t2 = input.indexOf('\t', t1 + 1);
+  if (t2 == -1) return;
+
+  device = input.substring(0, t1);
+  moist  = input.substring(t1 + 1, t2);
+  temp   = input.substring(t2 + 1);
+}
+
+
 // Sends @nodes and waits until we get `requiredCount` lines that begin with "@hub"
 // or until `timeoutMs` is reached. Each valid response is printed and forwarded over I2C.
 uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
@@ -199,10 +242,15 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
       if (line.indexOf(HUB_PREFIX) != -1) {
         got++;
 
-        // Forward the line over I2C to the slave (keeps your existing pipeline)
-        String parsed_line = parseLoRa(line);
-        LOG_PRINTLN(String("NOT Transmitting over LTE: ") + parsed_line);
-        // transmitI2C(parsed_line); commented out because LTE subsystem not connected
+        String payload = parseLoRa(line);
+        LOG_PRINTLN(String("NOT Transmitting over LTE: ") + payload);
+        
+        String device, moist, temp;
+        splitPayload(payload, device, moist, temp);
+        Serial.println(device);  // mesh node name
+        Serial.println(moist);   // Moist,+004.65,...
+        Serial.println(temp);    // Temp,+020.45,...
+        uploadNote(device, moist, temp);
       } else {
         // Still print other lines for visibility
         LOG_PRINT(F("[Mesh] Unfiltered: "));
@@ -220,6 +268,7 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
   return got;
 }
 
+
 // ---------------- SDI-12 workflow ----------------
 bool initializeProbe() {
   String response = sendCommand("?!");
@@ -234,14 +283,18 @@ bool initializeProbe() {
   delay(1000);
 }
 
+
 void takeMeasurements() {
   String sm = measureSoilMoisture();
   delay(500);
   String st = measureTemperature();
-  String payload = "hub\t" + sm + "\t" + st + "\n";
-  LOG_PRINTLN(String("NOT Transmitting over LTE: ") + payload);
-  // transmitI2C(payload); commented out because LTE subsystem not connected
+  Serial.println("hub"); // hub
+  Serial.println(sm);    // Moist,+004.65,...
+  Serial.println(st);    // Temp,+020.45,...
+
+  uploadNote("hub", sm, st);
 }
+
 
 String measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
@@ -268,6 +321,7 @@ String measureSoilMoisture() {
   return "";
 }
 
+
 String measureTemperature() {
   String measureCommand = probeAddress + "C2!";
   String response = sendCommand(measureCommand);
@@ -292,6 +346,7 @@ String measureTemperature() {
   }
   return "";
 }
+
 
 String parseMoistureData(String data) {
   String outputData = "Moist";
@@ -331,6 +386,7 @@ String parseMoistureData(String data) {
   return outputData;
 }
 
+
 String parseTemperatureData(String data) {
   String outputData = "Temp";
 
@@ -369,33 +425,6 @@ String parseTemperatureData(String data) {
   return outputData;
 }
 
-void transmitI2C(String data) {
-  int maxChunkSize = 30; // leave room in the Wire buffer
-  int dataLength = data.length();
-
-  for (int i = 0; i < dataLength; i += maxChunkSize) {
-    int chunkEnd = min(i + maxChunkSize, dataLength);
-    String chunk = data.substring(i, chunkEnd);
-
-    Wire.beginTransmission(SLAVE_ADDRESS);
-    delayMicroseconds(10);
-    Wire.write(chunk.c_str(), chunk.length());
-
-    if (chunkEnd >= dataLength) {
-      Wire.write('\n');
-    }
-
-    byte error = Wire.endTransmission();
-    if (error != 0) {
-      LOG_PRINT("I2C Transmission error: ");
-      LOG_PRINTLN(error);
-    }
-
-    if (chunkEnd < dataLength) {
-      delay(10);
-    }
-  }
-}
 
 String sendCommand(String command) {
   mySDI12.sendCommand(command);
@@ -418,4 +447,20 @@ String sendCommand(String command) {
     delay(10);
   }
   return response;
+}
+
+
+void uploadNote(String device, String moist, String temp){
+    J *req = notecard.newRequest("note.add");
+    if (req != NULL) {
+      JAddStringToObject(req, "file", "sensors.qo");
+      JAddBoolToObject(req, "sync", true);
+      J *body = JAddObjectToObject(req, "body");
+      if (body) {
+        JAddStringToObject(body, "dev", device.c_str());
+        JAddStringToObject(body, "moist", moist.c_str());
+        JAddStringToObject(body, "temp", temp.c_str());
+      }
+      notecard.sendRequest(req);
+    }
 }
