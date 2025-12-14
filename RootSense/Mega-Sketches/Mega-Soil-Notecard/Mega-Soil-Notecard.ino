@@ -51,7 +51,7 @@ String measureSoilMoisture();
 String measureTemperature();
 String parseMoistureData(String data);
 String parseTemperatureData(String data);
-bool initializeProbe();
+bool findProbe();
 void uploadNote(String device, String moist, String temp);
 
 // Meshtastic helpers
@@ -95,7 +95,7 @@ void setup() {
   mySDI12.begin();
 
   // Initialize and find probe address
-  while (!initializeProbe()) {
+  while (!findProbe()) {
     delay(1000);
   }
 
@@ -270,7 +270,7 @@ uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
 
 
 // ---------------- SDI-12 workflow ----------------
-bool initializeProbe() {
+bool findProbe() {
   String response = sendCommand("?!");
   if (response.length() > 0) {
     probeAddress = response;
