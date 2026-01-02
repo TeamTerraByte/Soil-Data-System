@@ -295,7 +295,7 @@ void takeMeasurements() {
   uploadNote("hub", sm, st);
 }
 
-
+// TODO: Combine common code with measureTemperature
 String measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
   String response = sendCommand(measureCommand);
@@ -347,7 +347,7 @@ String measureTemperature() {
   return "";
 }
 
-
+// TODO: Combine common code with parseTemperatureData
 String parseMoistureData(String data) {
   String outputData = "Moist";
 
@@ -386,7 +386,7 @@ String parseMoistureData(String data) {
   return outputData;
 }
 
-
+// TODO: Combine common code with parseMoistureData
 String parseTemperatureData(String data) {
   String outputData = "Temp";
 
