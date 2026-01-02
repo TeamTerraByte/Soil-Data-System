@@ -41,8 +41,13 @@ const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds
 const unsigned long MESH_BAUD = 38400;
 const unsigned long MESH_TIMEOUT_MS = 120000; // 2 minutes
 const uint8_t REQUIRED_NODE_COUNT = 1;        // configurable device count
-const char* HUB_PREFIX = "@hub";              // expected response prefix
-const char* NODES_QUERY = "@nodes";           // query we send
+const char* BOSS_PREFIX = "@boss";              // expected response prefix
+const char* WORKERS_QUERY = "@workers";           // query we send
+const int NUM_WORKERS = 2;
+const char* WORKERS[] = {
+  "@w1",
+  "@w2"
+};
 
 // Forward declarations
 String sendCommand(String command);
@@ -57,7 +62,7 @@ void uploadNote(String device, String moist, String temp);
 // Meshtastic helpers
 void meshBegin();
 void meshSendLine(const String& line);
-uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs);
+uint8_t meshQueryNodes(unsigned long timeoutMs);
 bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs);
 int queryNumber = 0;
 
@@ -105,7 +110,7 @@ void setup() {
 
   // --- Query mesh nodes once at startup ---
   LOG_PRINTLN(F("[Mesh] Querying nodes..."));
-  uint8_t got = meshQueryNodes(REQUIRED_NODE_COUNT, MESH_TIMEOUT_MS);
+  uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
   LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
   LOG_PRINTLN(got);
 }
@@ -123,7 +128,7 @@ void loop() {
     delay(500);  // delay so it doesn't block the meshtastic query?
 
     // other sensor measurements
-    uint8_t got = meshQueryNodes(REQUIRED_NODE_COUNT, MESH_TIMEOUT_MS);
+    uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
     LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
     LOG_PRINTLN(got);
     queryNumber += 1;
@@ -222,51 +227,71 @@ void splitPayload(const String& input,
   temp   = input.substring(t2 + 1);
 }
 
-
-// Sends @nodes and waits until we get `requiredCount` lines that begin with "@hub"
-// or until `timeoutMs` is reached. Each valid response is printed and forwarded over I2C.
-uint8_t meshQueryNodes(uint8_t requiredCount, unsigned long timeoutMs) {
-  meshSendLine(String(NODES_QUERY) + " " + String(queryNumber));  
-
-  uint8_t got = 0;
-  unsigned long start = millis();
-  String line;
-
-  // Per-character timeout (for line assembly); keeps outer overall timeout authoritative
+uint8_t meshQueryNodes(unsigned long timeoutMs) {
   const unsigned long PER_CHAR_TO = 1500;
-
-  while (millis() - start < timeoutMs && got < requiredCount) {
-    // Try to read a line; if none arrives within PER_CHAR_TO, loop to check global timeout
-    if (meshReadLine(line, PER_CHAR_TO)) {
-      // Check for expected prefix
-      if (line.indexOf(HUB_PREFIX) != -1) {
-        got++;
-
-        String payload = parseLoRa(line);
-        LOG_PRINTLN(String("NOT Transmitting over LTE: ") + payload);
-        
-        String device, moist, temp;
-        splitPayload(payload, device, moist, temp);
-        Serial.println(device);  // mesh node name
-        Serial.println(moist);   // Moist,+004.65,...
-        Serial.println(temp);    // Temp,+020.45,...
-        uploadNote(device, moist, temp);
-      } else {
-        // Still print other lines for visibility
-        LOG_PRINT(F("[Mesh] Unfiltered: "));
-        LOG_PRINTLN(line);
+  unsigned long start = 0;
+  String line = "";
+  uint8_t recvd = 0;
+  
+  for (int i = 0; i < NUM_WORKERS; i++){
+    start = millis();
+    sendMeshLine(WORKERS[i] + "q");  // q represents query
+    while (millis() - start < timeoutMs) {
+      if (meshReadLine(line, PER_CHAR_TO)) {
+        if (line.indexOf(WORKERS[i] + "r") != -1) {  // r represents response
+          String payload = parseLoRa(line);
+          Serial.println("Parsed data from " + WORKERS[i] + ":" + line);
+          recvd++;
+        }
       }
     }
   }
 
-  if (got < requiredCount) {
-    LOG_PRINT(F("[Mesh] Timeout waiting for nodes. Got "));
-    LOG_PRINT(got);
-    LOG_PRINT(F(" of "));
-    LOG_PRINTLN(requiredCount);
-  }
-  return got;
+  return recvd;
 }
+
+
+// uint8_t meshQueryNode(unsigned long timeoutMs) {
+
+//   uint8_t got = 0;
+//   unsigned long start = millis();
+//   String line;
+
+//   // Per-character timeout (for line assembly); keeps outer overall timeout authoritative
+//   const unsigned long PER_CHAR_TO = 1500;
+
+//   while (millis() - start < timeoutMs) {
+//     // Try to read a line; if none arrives within PER_CHAR_TO, loop to check global timeout
+//     if (meshReadLine(line, PER_CHAR_TO)) {
+//       // Check for expected prefix
+//       if (line.indexOf(BOSS_PREFIX) != -1) {
+//         got++;
+
+//         String payload = parseLoRa(line);
+//         LOG_PRINTLN(String("NOT Transmitting over LTE: ") + payload);
+        
+//         String device, moist, temp;
+//         splitPayload(payload, device, moist, temp);
+//         Serial.println(device);  // mesh node name
+//         Serial.println(moist);   // Moist,+004.65,...
+//         Serial.println(temp);    // Temp,+020.45,...
+//         uploadNote(device, moist, temp);
+//       } else {
+//         // Still print other lines for visibility
+//         LOG_PRINT(F("[Mesh] Unfiltered: "));
+//         LOG_PRINTLN(line);
+//       }
+//     }
+//   }
+
+//   if (got < requiredCount) {
+//     LOG_PRINT(F("[Mesh] Timeout waiting for nodes. Got "));
+//     LOG_PRINT(got);
+//     LOG_PRINT(F(" of "));
+//     LOG_PRINTLN(requiredCount);
+//   }
+//   return got;
+// }
 
 
 // ---------------- SDI-12 workflow ----------------
