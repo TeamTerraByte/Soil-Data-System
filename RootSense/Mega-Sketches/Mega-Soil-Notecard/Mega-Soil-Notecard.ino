@@ -49,6 +49,12 @@ const char* WORKERS[] = {
   "@w2"
 };
 
+struct ParsedMessage {
+  String header;  // @w{x}r
+  String moist;   // Moist,...
+  String temp;    // Temp,...
+};
+
 // Forward declarations
 String sendCommand(String command);
 void takeMeasurements();
@@ -58,6 +64,7 @@ String parseMoistureData(String data);
 String parseTemperatureData(String data);
 bool findProbe();
 void uploadNote(String device, String moist, String temp);
+ParsedMessage parseMessage(const String& input);
 
 // Meshtastic helpers
 void meshBegin();
@@ -80,7 +87,6 @@ void setup() {
   LOG_BEGIN(9600);
   
   notecard.begin();
-
   notecard.setDebugOutputStream(Serial);
   {
     J *req = notecard.newRequest("hub.set");
@@ -227,72 +233,40 @@ void splitPayload(const String& input,
   temp   = input.substring(t2 + 1);
 }
 
+
 uint8_t meshQueryNodes(unsigned long timeoutMs) {
   const unsigned long PER_CHAR_TO = 1500;
   unsigned long start = 0;
   String line = "";
   uint8_t recvd = 0;
-  
-  for (int i = 0; i < NUM_WORKERS; i++){
+
+  for (int i = 0; i < NUM_WORKERS; i++) {
     start = millis();
-    sendMeshLine(WORKERS[i] + "q");  // q represents query
+
+    const String QUERY    = String(WORKERS[i]) + "q";
+    const String RESPONSE = String(WORKERS[i]) + "r";
+
+    meshSendLine(QUERY);  // q represents query
+
     while (millis() - start < timeoutMs) {
       if (meshReadLine(line, PER_CHAR_TO)) {
-        if (line.indexOf(WORKERS[i] + "r") != -1) {  // r represents response
+        if (line.indexOf(RESPONSE) != -1) {  // r represents response
           String payload = parseLoRa(line);
-          Serial.println("Parsed data from " + WORKERS[i] + ":" + line);
+
+          Serial.println(String("Parsed data from ") + WORKERS[i] + ":" + line);
           recvd++;
+          
+          ParsedMessage pm = parseMessage(line);
+          uploadNote(pm.header, pm.moist, pm.temp);
+
+          break;  // TODO: figure out why sometimes I get two responses from the same device. 
+          // Maybe it's getting relayed from a different device. 
         }
       }
     }
   }
-
   return recvd;
 }
-
-
-// uint8_t meshQueryNode(unsigned long timeoutMs) {
-
-//   uint8_t got = 0;
-//   unsigned long start = millis();
-//   String line;
-
-//   // Per-character timeout (for line assembly); keeps outer overall timeout authoritative
-//   const unsigned long PER_CHAR_TO = 1500;
-
-//   while (millis() - start < timeoutMs) {
-//     // Try to read a line; if none arrives within PER_CHAR_TO, loop to check global timeout
-//     if (meshReadLine(line, PER_CHAR_TO)) {
-//       // Check for expected prefix
-//       if (line.indexOf(BOSS_PREFIX) != -1) {
-//         got++;
-
-//         String payload = parseLoRa(line);
-//         LOG_PRINTLN(String("NOT Transmitting over LTE: ") + payload);
-        
-//         String device, moist, temp;
-//         splitPayload(payload, device, moist, temp);
-//         Serial.println(device);  // mesh node name
-//         Serial.println(moist);   // Moist,+004.65,...
-//         Serial.println(temp);    // Temp,+020.45,...
-//         uploadNote(device, moist, temp);
-//       } else {
-//         // Still print other lines for visibility
-//         LOG_PRINT(F("[Mesh] Unfiltered: "));
-//         LOG_PRINTLN(line);
-//       }
-//     }
-//   }
-
-//   if (got < requiredCount) {
-//     LOG_PRINT(F("[Mesh] Timeout waiting for nodes. Got "));
-//     LOG_PRINT(got);
-//     LOG_PRINT(F(" of "));
-//     LOG_PRINTLN(requiredCount);
-//   }
-//   return got;
-// }
-
 
 // ---------------- SDI-12 workflow ----------------
 bool findProbe() {
@@ -489,3 +463,53 @@ void uploadNote(String device, String moist, String temp){
       notecard.sendRequest(req);
     }
 }
+
+
+
+ParsedMessage parseMessage(const String& input) {
+  ParsedMessage out;
+
+  int len = input.length();
+
+  int headerEnd = -1;
+  int moistStart = -1;
+  int moistEnd = -1;
+  int tempStart = -1;
+
+  // Locate boundaries in one scan
+  for (int i = 0; i < len; i++) {
+    char c = input[i];
+
+    // End of header (@w{x}r ends at 'r')
+    if (headerEnd < 0 && c == 'r') {
+      headerEnd = i + 1;
+    }
+
+    // Moist section starts
+    if (moistStart < 0 && c == 'M') {
+      moistStart = i;
+    }
+
+    // Tab ends Moist section
+    if (moistStart >= 0 && moistEnd < 0 && c == '\t') {
+      moistEnd = i;
+      tempStart = i + 1;
+      break;
+    }
+  }
+
+  // Extract substrings (no whitespace included)
+  if (headerEnd > 0)
+    out.header = input.substring(0, headerEnd);
+
+  if (moistStart >= 0 && moistEnd > moistStart)
+    out.moist = input.substring(moistStart, moistEnd);
+
+  if (tempStart >= 0)
+    out.temp = input.substring(tempStart);
+
+  return out;
+}
+
+
+

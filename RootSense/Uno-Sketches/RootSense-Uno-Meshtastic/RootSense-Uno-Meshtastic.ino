@@ -14,6 +14,7 @@ const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 // Cached values (updated on demand)
 String lastMoist = "Moist";
 String lastTemp  = "Temp";
+const String workerNum = "1";
 
 void setup() {
   Serial.begin(9600);
@@ -37,13 +38,20 @@ void loop() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
-    if (command.length() > 0) sendCommand(command);
+    if (command.length() > 0){
+      // My custom command to debug measurements
+      if (command.indexOf("takeMeasurements()") != -1){
+        takeMeasurements();
+      }
+      else {
+        sendCommand(command);
+      }
+    }
   }
 
   // Listen for inbound Meshtastic TEXTMSG lines
   checkMeshInbound();
 
-  // takeMeasurements();  // debugging measurements
   
   delay(50); // normal delay for normal operation
   // delay(10000);  // long delay for debugging
@@ -58,11 +66,10 @@ void sendMesh(const String& s) {
 
 void respondToNodes() {
   // Fresh measurements on demand
-  enviroPro.begin();
+  // enviroPro.begin();  // TODO find out if I need to initialize again
   takeMeasurements();
 
-  // Build ONE message with three lines: @hub, Moist..., Temp...
-  String payload = "@hub\t" + lastMoist + "\t" + lastTemp;
+  String payload = "@w" + workerNum + "r\t" + lastMoist + "\t" + lastTemp;
   sendMesh(payload);
 }
 
@@ -75,8 +82,7 @@ void checkMeshInbound() {
     Serial.print(F("Mesh RX: "));
     Serial.println(line);
 
-    // Changed: now checks if "@nodes" appears anywhere in the message
-    if (line.indexOf("@nodes") != -1) {
+    if (line.indexOf("@w" + workerNum + "q") != -1) {
       respondToNodes();
     }
   }
@@ -101,7 +107,6 @@ void takeMeasurements() {
   delay(500);
   measureTemperature();
 }
-
 void measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
   String response = sendCommand(measureCommand);
@@ -214,19 +219,25 @@ String sendCommand(String command) {
   
   String response = "";
   unsigned long startTime = millis();
-  const unsigned long timeout = 3000;
-
+  const unsigned long timeout = 3000;  // TODO: timing may need to be tweaked
+  if (DEBUG){
+    Serial.print("EnviroPro response: ");
+  }
   while (millis() - startTime < timeout) {
     if (enviroPro.available()) {
       char c = enviroPro.read();
       response += c;
+      if (DEBUG){  // print characters as they come
+        Serial.print(c);
+      }
     }
     delay(10);
   }
 
   response.trim();
   if (DEBUG){
-    Serial.println("EnviroPro response: " + response);
+    // Serial.println("EnviroPro response: " + response);
+    Serial.print("\n");  // newline to end response
     Serial.println("Response length: " + (String) response.length());
   }
   return response;
