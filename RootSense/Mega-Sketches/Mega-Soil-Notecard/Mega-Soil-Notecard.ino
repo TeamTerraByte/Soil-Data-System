@@ -298,9 +298,19 @@ void takeMeasurements() {
 // TODO: Combine common code with measureTemperature
 String measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
+  String dataResponse = "";
+  String dataCommand = probeAddress + "D0!";
+  const int MAX_TRIES = 3;
+  int try_num = 0;
   String response = sendCommand(measureCommand);
 
-  if (response.length() > 0) {
+  while (try_num < MAX_TRIES && response.length() != 57){
+    try_num++;
+    response = sendCommand(measureCommand);
+    Serial.println("Reattempt # " + String(try_num));
+  }
+
+  if (response.length() == 57) {
     int measureTime = 3000;
     if (response.length() >= 6) {
       String timeStr = response.substring(0, 3);
@@ -308,7 +318,6 @@ String measureSoilMoisture() {
     }
     delay(measureTime);
 
-    String dataCommand = probeAddress + "D0!";
     String dataResponse = sendCommand(dataCommand);
 
     if (dataResponse.length() > 0) {
@@ -318,15 +327,26 @@ String measureSoilMoisture() {
       return "Error measuring soil moisture";
     }
   }
-  return "";
+  else {
+    return "Error measuring soil moisture";
+  }
 }
-
 
 String measureTemperature() {
   String measureCommand = probeAddress + "C2!";
+  const int MAX_TRIES = 3;
+  int try_num = 0;
+
   String response = sendCommand(measureCommand);
 
-  if (response.length() > 0) {
+  // Match measureSoilMoisture retry logic style:
+  // retry until response length matches expected, or retries exhausted.
+  while (try_num < MAX_TRIES && response.length() != 57) {
+    try_num++;
+    response = sendCommand(measureCommand);
+  }
+
+  if (response.length() == 57) {
     int measureTime = 3000;
     if (response.length() >= 6) {
       String timeStr = response.substring(0, 3);
@@ -339,12 +359,12 @@ String measureTemperature() {
 
     if (dataResponse.length() > 0) {
       return parseTemperatureData(dataResponse);
-    }
-    else {
+    } else {
       return "Error measuring soil temp";
     }
+  } else {
+    return "Error measuring soil temp";
   }
-  return "";
 }
 
 // TODO: Combine common code with parseTemperatureData
