@@ -11,10 +11,16 @@ SDI12 enviroPro(SOIL_SENSOR_PIN);
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 
-// Cached values (updated on demand)
-String lastMoist = "Moist";
-String lastTemp  = "Temp";
-const String workerNum = "2";
+const String workerNum = "1";
+
+
+struct Measurements {
+  String moist;
+  String temp;
+};
+
+String sendCommand(String command, const unsigned long timeout = 3000);
+
 
 void setup() {
   Serial.begin(9600);
@@ -67,9 +73,9 @@ void sendMesh(const String& s) {
 void respondToNodes() {
   // Fresh measurements on demand
   // enviroPro.begin();  // TODO find out if I need to initialize again
-  takeMeasurements();
+  Measurements m = takeMeasurements();
 
-  String payload = "@w" + workerNum + "r\t" + lastMoist + "\t" + lastTemp;
+  String payload = "@w" + workerNum + "r\t" + m.moist + "\t" + m.temp;
   sendMesh(payload);
 }
 
@@ -102,46 +108,66 @@ bool initializeProbe() {
   }
 }
 
-void takeMeasurements() {
-  measureSoilMoisture();
+Measurements takeMeasurements() {
+  Measurements m;
+  m.moist = measureSoilMoisture();
   delay(500);
-  measureTemperature();
+  m.temp  = measureTemperature();
+  return m;
 }
-void measureSoilMoisture() {
+
+
+String measureSoilMoisture() {
   String measureCommand = probeAddress + "C0!";
-  String response = sendCommand(measureCommand);
-  if (response.length() > 0) {
-    int measureTime = 2000;
-    // if (response.length() >= 6) {
-    //   String timeStr = response.substring(0, 3);
-    //   measureTime = timeStr.toInt() * 1000 + 1000;
-    // }
+  String dataCommand    = probeAddress + "D0!";
+  const int MAX_TRIES   = 5;
+  int try_num = 0;
+
+  int measureTime = 2000;  
+  String response = "";    
+
+  while (try_num < MAX_TRIES) {
+    Serial.println("Moisture Measure Attempt # " + String(try_num));
+
+    response = sendCommand(measureCommand);
     delay(measureTime);
+    String dataResponse = sendCommand(dataCommand, 6000);
 
-    String dataCommand = probeAddress + "D0!";
-    String dataResponse = sendCommand(dataCommand);
-    if (dataResponse.length() > 0) parseMoistureData(dataResponse);
-  }
-}
-
-void measureTemperature() {
-  String measureCommand = probeAddress + "C2!";
-  String response = sendCommand(measureCommand);
-  if (response.length() > 0) {
-    int measureTime = 3000;
-    if (response.length() >= 6) {
-      String timeStr = response.substring(0, 3);
-      measureTime = timeStr.toInt() * 1000 + 1000;
+    if (dataResponse.length() == 57 && hasValidChars(dataResponse.substring(1))) {
+      return parseMoistureData(dataResponse);
     }
-    delay(measureTime);
-
-    String dataCommand = probeAddress + "D0!";
-    String dataResponse = sendCommand(dataCommand);
-    if (dataResponse.length() > 0) parseTemperatureData(dataResponse);
+    try_num++;
   }
+
+  return "Error measuring soil moisture";
 }
 
-void parseMoistureData(String data) {
+
+String measureTemperature() {
+  String measureCommand = probeAddress + "C2!";
+  String dataCommand    = probeAddress + "D0!";
+  const int MAX_TRIES   = 5;
+  int try_num = 0;
+
+  int measureTime = 2000;
+  String response = "";
+
+  while (try_num < MAX_TRIES) {
+    Serial.println("Temperature Measure Attempt # " + String(try_num));
+
+    response = sendCommand(measureCommand);
+    delay(measureTime);
+    String dataResponse = sendCommand(dataCommand, 6000);
+
+    if (dataResponse.length() == 57 && hasValidChars(dataResponse.substring(1))) {
+      return parseTemperatureData(dataResponse);
+    }
+    try_num++;
+  }
+  return "Error measuring soil temp";
+}
+
+String parseMoistureData(String data) {
   String outputData = "Moist";
   Serial.print(outputData);
 
@@ -163,20 +189,24 @@ void parseMoistureData(String data) {
     }
 
     startIndex = nextDelim + 1;
-    if (startIndex < data.length() && (data.charAt(startIndex-1) == '+' || data.charAt(startIndex-1) == '-')) {
+    if (startIndex < data.length() &&
+        (data.charAt(startIndex - 1) == '+' || data.charAt(startIndex - 1) == '-')) {
       int endNum = startIndex;
-      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') endNum++;
-      String value = String(data.charAt(startIndex-1)) + data.substring(startIndex, endNum);
+      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') {
+        endNum++;
+      }
+      String value = String(data.charAt(startIndex - 1)) + data.substring(startIndex, endNum);
       outputData += "," + value;
       Serial.print("," + value);
       startIndex = endNum;
     }
   }
+
   Serial.println();
-  lastMoist = outputData;  // update cache only
+  return outputData;
 }
 
-void parseTemperatureData(String data) {
+String parseTemperatureData(String data) {
   String outputData = "Temp";
   Serial.print(outputData);
 
@@ -198,20 +228,24 @@ void parseTemperatureData(String data) {
     }
 
     startIndex = nextDelim + 1;
-    if (startIndex < data.length() && (data.charAt(startIndex-1) == '+' || data.charAt(startIndex-1) == '-')) {
+    if (startIndex < data.length() &&
+        (data.charAt(startIndex - 1) == '+' || data.charAt(startIndex - 1) == '-')) {
       int endNum = startIndex;
-      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') endNum++;
-      String value = String(data.charAt(startIndex-1)) + data.substring(startIndex, endNum);
+      while (endNum < data.length() && data.charAt(endNum) != '+' && data.charAt(endNum) != '-') {
+        endNum++;
+      }
+      String value = String(data.charAt(startIndex - 1)) + data.substring(startIndex, endNum);
       outputData += "," + value;
       Serial.print("," + value);
       startIndex = endNum;
     }
   }
+
   Serial.println();
-  lastTemp = outputData;  // update cache only
+  return outputData;
 }
 
-String sendCommand(String command) {
+String sendCommand(String command, const unsigned long timeout = 3000) {
   if (DEBUG) {
     Serial.println("Sending " + command + " to EnviroPro sensor");
   }
@@ -219,7 +253,6 @@ String sendCommand(String command) {
   
   String response = "";
   unsigned long startTime = millis();
-  const unsigned long timeout = 3000;  // TODO: timing may need to be tweaked
   if (DEBUG){
     Serial.print("EnviroPro response: ");
   }
@@ -231,7 +264,7 @@ String sendCommand(String command) {
         Serial.print(c);
       }
     }
-    delay(10);
+    // delay(10);
   }
 
   response.trim();
@@ -241,4 +274,15 @@ String sendCommand(String command) {
     Serial.println("Response length: " + (String) response.length());
   }
   return response;
+}
+
+bool hasValidChars(const String& input) {
+  const char* acceptable = "+-.0123456789";
+
+  for (int i = 0; i < input.length(); i++) {
+    if (strchr(acceptable, input[i]) == nullptr) {
+      return false;
+    }
+  }
+  return true;
 }

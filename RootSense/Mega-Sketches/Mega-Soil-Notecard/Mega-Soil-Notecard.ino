@@ -302,69 +302,44 @@ String measureSoilMoisture() {
   String dataCommand = probeAddress + "D0!";
   const int MAX_TRIES = 3;
   int try_num = 0;
-  String response = sendCommand(measureCommand);
+  int measureTime = 3000;
 
-  while (try_num < MAX_TRIES && response.length() != 57){
-    try_num++;
+  while (try_num < MAX_TRIES){
+    Serial.println("Moisture Measure Attempt # " + String(try_num));
     response = sendCommand(measureCommand);
-    Serial.println("Reattempt # " + String(try_num));
-  }
-
-  if (response.length() == 57) {
-    int measureTime = 3000;
-    if (response.length() >= 6) {
-      String timeStr = response.substring(0, 3);
-      measureTime = timeStr.toInt() * 1000 + 1000;
-    }
     delay(measureTime);
-
     String dataResponse = sendCommand(dataCommand);
 
-    if (dataResponse.length() > 0) {
+    if (dataResponse.length() == 57) {
       return parseMoistureData(dataResponse);
     }
-    else {
-      return "Error measuring soil moisture";
-    }
-  }
-  else {
-    return "Error measuring soil moisture";
-  }
-}
 
+    try_num++;
+  }
+  return "Error measuring soil moisture"
+}
 String measureTemperature() {
   String measureCommand = probeAddress + "C2!";
+  String dataResponse = "";
+  String dataCommand = probeAddress + "D0!";
   const int MAX_TRIES = 3;
   int try_num = 0;
+  int measureTime = 3000;
+  String response = "";
 
-  String response = sendCommand(measureCommand);
-
-  // Match measureSoilMoisture retry logic style:
-  // retry until response length matches expected, or retries exhausted.
-  while (try_num < MAX_TRIES && response.length() != 57) {
-    try_num++;
+  while (try_num < MAX_TRIES) {
+    Serial.println("Temperature Measure Attempt # " + String(try_num));
     response = sendCommand(measureCommand);
-  }
-
-  if (response.length() == 57) {
-    int measureTime = 3000;
-    if (response.length() >= 6) {
-      String timeStr = response.substring(0, 3);
-      measureTime = timeStr.toInt() * 1000 + 1000;
-    }
     delay(measureTime);
+    dataResponse = sendCommand(dataCommand);
 
-    String dataCommand = probeAddress + "D0!";
-    String dataResponse = sendCommand(dataCommand);
-
-    if (dataResponse.length() > 0) {
+    if (dataResponse.length() == 57) {
       return parseTemperatureData(dataResponse);
-    } else {
-      return "Error measuring soil temp";
     }
-  } else {
-    return "Error measuring soil temp";
+    try_num++;
   }
+
+  return "Error measuring soil temp";
 }
 
 // TODO: Combine common code with parseTemperatureData
