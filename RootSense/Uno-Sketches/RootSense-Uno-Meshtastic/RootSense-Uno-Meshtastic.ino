@@ -14,7 +14,7 @@ const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 // Cached values (updated on demand)
 String lastMoist = "Moist";
 String lastTemp  = "Temp";
-const String workerNum = "1";
+const String workerNum = "2";
 
 void setup() {
   Serial.begin(9600);

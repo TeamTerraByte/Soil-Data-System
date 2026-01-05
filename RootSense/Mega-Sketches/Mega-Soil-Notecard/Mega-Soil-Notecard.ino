@@ -65,6 +65,7 @@ String parseTemperatureData(String data);
 bool findProbe();
 void uploadNote(String device, String moist, String temp);
 ParsedMessage parseMessage(const String& input);
+void waitForSyncCompletion(unsigned long pollIntervalMs);
 
 // Meshtastic helpers
 void meshBegin();
@@ -510,6 +511,62 @@ ParsedMessage parseMessage(const String& input) {
 
   return out;
 }
+
+
+void waitForSyncCompletion(unsigned long pollIntervalMs = 2000) {
+  while (true) {
+    // Create hub.sync.status request
+    J *req = notecard.newRequest("hub.sync.status");
+    if (req == NULL) {
+      Serial.println("ERROR: Failed to create hub.sync.status request");
+      return;
+    }
+
+    // Send request and get response
+    J *rsp = notecard.requestAndResponse(req);
+    if (rsp == NULL) {
+      Serial.println("ERROR: No response from Notecard");
+      return;
+    }
+
+    // Check for Notecard-level error
+    const char *err = JGetString(rsp, "err");
+    if (err != NULL) {
+      Serial.print("Notecard error: ");
+      Serial.println(err);
+      JDelete(rsp);
+      return;
+    }
+
+    // Fields documented by hub.sync.status
+    bool alert = JGetBool(rsp, "alert");
+    int completed = JGetInt(rsp, "completed");
+    int requested = JGetInt(rsp, "requested");
+
+    Serial.print("sync.status -> ");
+    Serial.print("requested=");
+    Serial.print(requested);
+    Serial.print("s, completed=");
+    Serial.print(completed);
+    Serial.print("s, alert=");
+    Serial.println(alert ? "true" : "false");
+
+    JDelete(rsp);
+
+    // If completed > 0, the sync finished
+    if (completed > 0) {
+      if (alert) {
+        Serial.println("SYNC COMPLETED WITH ERROR");
+      } else {
+        Serial.println("SYNC COMPLETED SUCCESSFULLY");
+      }
+      break;
+    }
+
+    delay(pollIntervalMs);
+  }
+}
+
 
 
 
