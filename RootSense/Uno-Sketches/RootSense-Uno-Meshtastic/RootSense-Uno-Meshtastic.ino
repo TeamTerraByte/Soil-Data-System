@@ -1,4 +1,4 @@
-#include <SDI12.h>
+#include <SDI12.h>  
 #include <AltSoftSerial.h>
 
 #define DEBUG true
@@ -11,7 +11,7 @@ SDI12 enviroPro(SOIL_SENSOR_PIN);
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 
-const String workerNum = "1";
+const String workerNum = "2";
 
 
 struct Measurements {
@@ -131,7 +131,7 @@ String measureSoilMoisture() {
 
     response = sendCommand(measureCommand);
     delay(measureTime);
-    String dataResponse = sendCommand(dataCommand, 6000);
+    String dataResponse = sendCommand(dataCommand);
 
     if (dataResponse.length() == 57 && hasValidChars(dataResponse.substring(1))) {
       return parseMoistureData(dataResponse);
@@ -157,7 +157,7 @@ String measureTemperature() {
 
     response = sendCommand(measureCommand);
     delay(measureTime);
-    String dataResponse = sendCommand(dataCommand, 6000);
+    String dataResponse = sendCommand(dataCommand);
 
     if (dataResponse.length() == 57 && hasValidChars(dataResponse.substring(1))) {
       return parseTemperatureData(dataResponse);
@@ -251,20 +251,23 @@ String sendCommand(String command, const unsigned long timeout = 3000) {
   }
   enviroPro.sendCommand(command);
   
-  String response = "";
+  String response;
+  response.reserve(256);
   unsigned long startTime = millis();
   if (DEBUG){
-    Serial.print("EnviroPro response: ");
+    // Serial.println("startTime: " + String(startTime));
+    // Serial.println("timeout: " + String(timeout));
+    // Serial.print("EnviroPro response: ");
   }
   while (millis() - startTime < timeout) {
     if (enviroPro.available()) {
       char c = enviroPro.read();
       response += c;
       if (DEBUG){  // print characters as they come
-        Serial.print(c);
+        Serial.write(c);
       }
     }
-    // delay(10);
+    delay(10);
   }
 
   response.trim();
