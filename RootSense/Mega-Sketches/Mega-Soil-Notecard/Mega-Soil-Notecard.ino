@@ -303,6 +303,7 @@ String measureSoilMoisture() {
   const int MAX_TRIES = 3;
   int try_num = 0;
   int measureTime = 3000;
+  String response = "";
 
   while (try_num < MAX_TRIES){
     Serial.println("Moisture Measure Attempt # " + String(try_num));
@@ -316,8 +317,9 @@ String measureSoilMoisture() {
 
     try_num++;
   }
-  return "Error measuring soil moisture"
+  return "Error measuring soil moisture";
 }
+
 String measureTemperature() {
   String measureCommand = probeAddress + "C2!";
   String dataResponse = "";
