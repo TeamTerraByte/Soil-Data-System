@@ -1,4 +1,3 @@
-```html
 <!doctype html>
 <html lang="en">
 <head>
@@ -7,7 +6,6 @@
   <title>ThingSpeak Soil Graphs (Zipper + Theme Toggle)</title>
 
   <style>
-    /* We will control the whole theme with [data-theme] on <html> */
     html[data-theme="dark"] { color-scheme: dark; }
     html[data-theme="light"] { color-scheme: light; }
 
@@ -21,7 +19,7 @@
       color: var(--fg);
     }
 
-    /* Light theme defaults (high contrast) */
+    /* Light theme (high contrast) */
     html[data-theme="light"]{
       --bg: #ffffff;
       --fg: #111111;
@@ -140,7 +138,6 @@
       grid-template-columns: 1fr;
       gap:14px;
     }
-
     @media (max-width: 900px){
       .twoCol{ display:none; }
       .zipper{ display:grid; }
@@ -210,16 +207,11 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script>
-    // Depth order: -10, -20, ...
     const DEPTHS_CM = [-10, -20, -30, -40, -50, -60, -70, -80];
     const depthLabel = (i) => `${DEPTHS_CM[i]} cm`;
 
-    // Series colors (lines/points)
     const MOIST_COLOR = "#1f77b4";
     const TEMP_COLOR  = "#d62728";
-
-    // Graph text requirement: white text on graphs (all modes)
-    const GRAPH_TEXT_COLOR = "#ffffff";
 
     // DOM
     const elChannelId = document.getElementById("channelId");
@@ -234,7 +226,6 @@
     const elTempCol   = document.getElementById("tempCol");
     const elZipperCol = document.getElementById("zipperCol");
 
-    // Charts + cards
     let moistCharts = new Array(8).fill(null);
     let tempCharts  = new Array(8).fill(null);
     let moistCards  = new Array(8).fill(null);
@@ -242,18 +233,53 @@
 
     function setStatus(msg){ elStatus.textContent = msg; }
 
-    // ---------- Theme toggle (persists in localStorage) ----------
+    // ---- Theme (persisted) ----
     function getInitialTheme(){
       const saved = localStorage.getItem("rs_theme");
       if (saved === "dark" || saved === "light") return saved;
       const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
       return prefersDark ? "dark" : "light";
     }
+    function currentGraphTextColor(){
+      // Dark theme -> white graph text, Light theme -> black graph text
+      const theme = document.documentElement.getAttribute("data-theme") || "dark";
+      return theme === "light" ? "#000000" : "#ffffff";
+    }
+    function currentGridColor(){
+      // Subtle grid lines that match the theme
+      const theme = document.documentElement.getAttribute("data-theme") || "dark";
+      return theme === "light" ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.15)";
+    }
+
+    function applyChartTheme(){
+      const textColor = currentGraphTextColor();
+      const gridColor = currentGridColor();
+
+      for (const chart of [...moistCharts, ...tempCharts]){
+        if (!chart) continue;
+
+        // Legend text
+        chart.options.plugins.legend.labels.color = textColor;
+
+        // X scale
+        chart.options.scales.x.title.color = textColor;
+        chart.options.scales.x.ticks.color = textColor;
+        chart.options.scales.x.grid.color  = gridColor;
+
+        // Y scale
+        chart.options.scales.y.title.color = textColor;
+        chart.options.scales.y.ticks.color = textColor;
+        chart.options.scales.y.grid.color  = gridColor;
+
+        chart.update();
+      }
+    }
+
     function setTheme(theme){
       document.documentElement.setAttribute("data-theme", theme);
       localStorage.setItem("rs_theme", theme);
-      // Chart text must remain white; still resize so charts redraw cleanly after CSS changes.
-      for (const c of [...moistCharts, ...tempCharts]) c?.update?.();
+      applyChartTheme();
+      // Ensure canvases recalc after CSS changes
       for (const c of [...moistCharts, ...tempCharts]) c?.resize?.();
     }
     function toggleTheme(){
@@ -261,7 +287,7 @@
       setTheme(cur === "dark" ? "light" : "dark");
     }
 
-    // ---------- ThingSpeak helpers ----------
+    // ---- ThingSpeak helpers ----
     function buildThingSpeakUrl(channelId, readKey, results){
       const base = `https://api.thingspeak.com/channels/${encodeURIComponent(channelId)}/feeds.json`;
       const params = new URLSearchParams();
@@ -269,14 +295,11 @@
       if (readKey && readKey.trim().length > 0) params.set("api_key", readKey.trim());
       return `${base}?${params.toString()}`;
     }
-
     function parseSignedFloat(s){
       const v = Number.parseFloat(String(s).trim());
       return Number.isFinite(v) ? v : null;
     }
-
     function parseFieldSeries(fieldStr){
-      // "Moist,+002.14,...(8)" or "Temp,+030.12,...(8)"
       if (!fieldStr || typeof fieldStr !== "string") return null;
       const parts = fieldStr.split(",").map(x => x.trim()).filter(Boolean);
       if (parts.length < 2) return null;
@@ -285,7 +308,6 @@
       if (nums.length !== 8) return null;
       return nums;
     }
-
     function uniqueSensors(feeds){
       const set = new Set();
       for (const f of feeds){
@@ -294,7 +316,6 @@
       }
       return Array.from(set).sort((a,b) => a.localeCompare(b));
     }
-
     function formatEpochTick(value){
       const ms = Number(value) * 1000;
       const d = new Date(ms);
@@ -302,10 +323,8 @@
       return d.toLocaleString();
     }
 
-    // ---------- Layout (desktop columns vs mobile zipper) ----------
-    function isMobile(){
-      return window.matchMedia("(max-width: 900px)").matches;
-    }
+    // ---- Layout (desktop columns vs mobile zipper) ----
+    function isMobile(){ return window.matchMedia("(max-width: 900px)").matches; }
     function clearContainers(){
       elMoistCol.innerHTML  = "";
       elTempCol.innerHTML   = "";
@@ -333,8 +352,11 @@
       };
     }
 
-    // ---------- Chart creation with WHITE graph text ----------
+    // ---- Chart creation ----
     function makeDepthChart(canvas, yLabel){
+      const textColor = currentGraphTextColor();
+      const gridColor = currentGridColor();
+
       return new Chart(canvas.getContext("2d"), {
         type: "scatter",
         data: { datasets: [] },
@@ -346,7 +368,7 @@
             legend: {
               display: true,
               position: "top",
-              labels: { color: GRAPH_TEXT_COLOR }
+              labels: { color: textColor }
             },
             tooltip: {
               callbacks: {
@@ -360,14 +382,14 @@
           scales: {
             x: {
               type: "linear",
-              title: { display: true, text: "Time", color: GRAPH_TEXT_COLOR },
-              ticks: { color: GRAPH_TEXT_COLOR, callback: (val) => formatEpochTick(val) },
-              grid: { color: "rgba(255,255,255,0.15)" }
+              title: { display: true, text: "Time", color: textColor },
+              ticks: { color: textColor, callback: (val) => formatEpochTick(val) },
+              grid: { color: gridColor }
             },
             y: {
-              title: { display: true, text: yLabel, color: GRAPH_TEXT_COLOR },
-              ticks: { color: GRAPH_TEXT_COLOR },
-              grid: { color: "rgba(255,255,255,0.15)" }
+              title: { display: true, text: yLabel, color: textColor },
+              ticks: { color: textColor },
+              grid: { color: gridColor }
             }
           },
           elements: {
@@ -417,7 +439,7 @@
       }, 150));
     }
 
-    // ---------- Data parsing / rendering ----------
+    // ---- Data parsing / rendering ----
     function buildRowsForSensor(feeds, sensorName){
       const rows = feeds
         .filter(f => (f?.field1 || "").trim() === sensorName)
@@ -443,7 +465,7 @@
         const tempData  = rows.map(r => ({ x: r.epoch, y: r.temp[i] }));
 
         moistCharts[i].data.datasets = [{
-          label: `Moisture ${depthLabel(i)}`,
+          label: `Moisture ${DEPTHS_CM[i]} cm`,
           showLine: true,
           data: moistData,
           borderColor: MOIST_COLOR,
@@ -451,7 +473,7 @@
         }];
 
         tempCharts[i].data.datasets = [{
-          label: `Temperature ${depthLabel(i)}`,
+          label: `Temperature ${DEPTHS_CM[i]} cm`,
           showLine: true,
           data: tempData,
           borderColor: TEMP_COLOR,
@@ -461,6 +483,9 @@
         moistCharts[i].update();
         tempCharts[i].update();
       }
+
+      // Ensure text colors match the current theme (important after updates)
+      applyChartTheme();
 
       setStatus((prev => {
         const header = (prev || "").split("\n")[0] || "";
@@ -543,7 +568,7 @@
       }[c]));
     }
 
-    // ---------- Init ----------
+    // ---- Init ----
     setTheme(getInitialTheme());
     elThemeBtn.addEventListener("click", toggleTheme);
     elLoadBtn.addEventListener("click", loadAndRender);
@@ -558,4 +583,3 @@
   -->
 </body>
 </html>
-```
