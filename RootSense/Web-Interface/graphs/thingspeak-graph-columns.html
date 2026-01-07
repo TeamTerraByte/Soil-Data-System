@@ -1,0 +1,507 @@
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ThingSpeak Soil Graphs (Zipper Layout)</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin:0;
+      padding:16px;
+      max-width: 1250px;
+      margin-inline:auto;
+    }
+    h1{ font-size:1.2rem; margin:0 0 12px; }
+    h2{ font-size:1.05rem; margin:0 0 10px; }
+    h3{ font-size:1rem; margin:0 0 8px; }
+
+    .card{
+      border:1px solid color-mix(in srgb, CanvasText 20%, transparent);
+      border-radius:12px;
+      padding:12px;
+      margin:12px 0;
+      background: color-mix(in srgb, Canvas 92%, CanvasText 8%);
+    }
+
+    label{ display:block; font-size:.9rem; margin-bottom:6px; }
+    input, select, button{
+      width:100%;
+      padding:10px;
+      border-radius:10px;
+      border:1px solid color-mix(in srgb, CanvasText 20%, transparent);
+      background: Canvas;
+      color: CanvasText;
+      box-sizing:border-box;
+    }
+    button{ cursor:pointer; font-weight:600; }
+
+    .grid3{
+      display:grid;
+      grid-template-columns: 1.2fr 1.2fr 0.6fr;
+      gap:12px;
+      align-items:end;
+    }
+    .row2{
+      display:grid;
+      grid-template-columns: 1fr 0.35fr;
+      gap:12px;
+      align-items:end;
+      margin-top:12px;
+    }
+    @media (max-width: 900px){
+      .grid3{ grid-template-columns:1fr; }
+      .row2{ grid-template-columns:1fr; }
+    }
+
+    .muted{ opacity:.8; font-size:.95rem; margin-top:6px; }
+    .status{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      white-space: pre-wrap;
+      font-size: .9rem;
+      opacity:.9;
+      margin-top: 12px;
+    }
+
+    /* Desktop: two columns: moisture LEFT, temperature RIGHT */
+    .twoCol{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:14px;
+      align-items:start;
+    }
+    .col{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:14px;
+    }
+
+    /* Mobile: zipper merge (Moist -10, Temp -10, Moist -20, Temp -20, ...) */
+    .zipper{
+      display:none;
+      grid-template-columns: 1fr;
+      gap:14px;
+    }
+
+    /* Switch behavior */
+    @media (max-width: 900px){
+      .twoCol{ display:none; }
+      .zipper{ display:grid; }
+    }
+
+    .chartCard canvas{ width:100% !important; height:260px !important; }
+  </style>
+</head>
+<body>
+  <h1>ThingSpeak Soil Sensor Visualization (Moist Left / Temp Right, Mobile Zipper)</h1>
+
+  <div class="card">
+    <div class="grid3">
+      <div>
+        <label for="channelId">Channel ID</label>
+        <input id="channelId" value="3002040" inputmode="numeric" />
+      </div>
+      <div>
+        <label for="readKey">Read API Key (optional for public channels)</label>
+        <input id="readKey" placeholder="XXXXXXXXXXXXXXXX" />
+      </div>
+      <div>
+        <label for="results"># Results</label>
+        <input id="results" value="800" inputmode="numeric" />
+      </div>
+    </div>
+
+    <div class="row2">
+      <div>
+        <label for="sensorSelect">Select sensor (field1)</label>
+        <select id="sensorSelect" disabled>
+          <option>Load data first…</option>
+        </select>
+        <div class="muted">Sensors are discovered from <b>field1</b> exactly.</div>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="loadBtn">Load / Refresh</button>
+      </div>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- Desktop / tablet layout -->
+  <div class="card twoCol" id="twoColLayout">
+    <div class="col">
+      <h2>Moisture</h2>
+      <div id="moistCol"></div>
+    </div>
+    <div class="col">
+      <h2>Temperature (°C)</h2>
+      <div id="tempCol"></div>
+    </div>
+  </div>
+
+  <!-- Mobile zipper-merged layout -->
+  <div class="card zipper" id="zipperLayout">
+    <h2>Moisture + Temperature (Zipper)</h2>
+    <div id="zipperCol"></div>
+  </div>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    // Depth order: -10, -20, ...
+    const DEPTHS_CM = [-10, -20, -30, -40, -50, -60, -70, -80];
+    const depthLabel = (i) => `${DEPTHS_CM[i]} cm`;
+
+    // Colors (moist vs temp) to make it visually obvious
+    const MOIST_COLOR = "#1f77b4";
+    const TEMP_COLOR  = "#d62728";
+
+    // DOM
+    const elChannelId = document.getElementById("channelId");
+    const elReadKey   = document.getElementById("readKey");
+    const elResults   = document.getElementById("results");
+    const elLoadBtn   = document.getElementById("loadBtn");
+    const elSensorSel = document.getElementById("sensorSelect");
+    const elStatus    = document.getElementById("status");
+
+    const elMoistCol  = document.getElementById("moistCol");
+    const elTempCol   = document.getElementById("tempCol");
+    const elZipperCol = document.getElementById("zipperCol");
+
+    // Charts: we keep BOTH sets, even though only one layout is visible via CSS.
+    // This avoids needing to rebuild on rotate; we just update all charts with new sensor data.
+    let moistCharts = new Array(8).fill(null);
+    let tempCharts  = new Array(8).fill(null);
+
+    function setStatus(msg){ elStatus.textContent = msg; }
+
+    function buildThingSpeakUrl(channelId, readKey, results){
+      const base = `https://api.thingspeak.com/channels/${encodeURIComponent(channelId)}/feeds.json`;
+      const params = new URLSearchParams();
+      params.set("results", String(results || 800));
+      if (readKey && readKey.trim().length > 0) params.set("api_key", readKey.trim());
+      return `${base}?${params.toString()}`;
+    }
+
+    function parseSignedFloat(s){
+      const v = Number.parseFloat(String(s).trim());
+      return Number.isFinite(v) ? v : null;
+    }
+
+    function parseFieldSeries(fieldStr){
+      // "Moist,+002.14,...(8)" or "Temp,+030.12,...(8)"
+      if (!fieldStr || typeof fieldStr !== "string") return null;
+      const parts = fieldStr.split(",").map(x => x.trim()).filter(Boolean);
+      if (parts.length < 2) return null;
+      const nums = parts.slice(1).map(parseSignedFloat);
+      if (nums.some(v => v === null)) return null;
+      if (nums.length !== 8) return null;
+      return nums;
+    }
+
+    function uniqueSensors(feeds){
+      const set = new Set();
+      for (const f of feeds){
+        const s = (f?.field1 || "").trim();
+        if (s) set.add(s);
+      }
+      return Array.from(set).sort((a,b) => a.localeCompare(b));
+    }
+
+    function formatEpochTick(value){
+      const ms = Number(value) * 1000;
+      const d = new Date(ms);
+      if (Number.isNaN(d.getTime())) return String(value);
+      return d.toLocaleString();
+    }
+
+    function destroyAllCharts(){
+      for (const c of moistCharts) c?.destroy?.();
+      for (const c of tempCharts)  c?.destroy?.();
+      moistCharts = new Array(8).fill(null);
+      tempCharts  = new Array(8).fill(null);
+      elMoistCol.innerHTML  = "";
+      elTempCol.innerHTML   = "";
+      elZipperCol.innerHTML = "";
+    }
+
+    function makeDepthChart(canvas, yLabel){
+      return new Chart(canvas.getContext("2d"), {
+        type: "scatter",
+        data: { datasets: [] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          parsing: false,
+          plugins: {
+            legend: { display: true, position: "top" },
+            tooltip: {
+              callbacks: {
+                title: (items) => {
+                  const x = items?.[0]?.raw?.x;
+                  return x != null ? formatEpochTick(x) : "";
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: "linear",
+              title: { display: true, text: "Time" },
+              ticks: { callback: (val) => formatEpochTick(val) }
+            },
+            y: { title: { display: true, text: yLabel } }
+          },
+          elements: {
+            line: { tension: 0.15 },
+            point: { radius: 2.2, hoverRadius: 5 }
+          }
+        }
+      });
+    }
+
+    function makeChartCard(titleText){
+      const card = document.createElement("div");
+      card.className = "card chartCard";
+      const h = document.createElement("h3");
+      h.textContent = titleText;
+      const canvas = document.createElement("canvas");
+      card.appendChild(h);
+      card.appendChild(canvas);
+      return { card, canvas };
+    }
+
+    function buildLayoutsAndCharts(){
+      // Desktop columns: 8 moisture cards left, 8 temp cards right
+      for (let i = 0; i < 8; i++){
+        const m = makeChartCard(`Moisture ${depthLabel(i)}`);
+        elMoistCol.appendChild(m.card);
+        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (units per your sensor)");
+
+        const t = makeChartCard(`Temperature ${depthLabel(i)}`);
+        elTempCol.appendChild(t.card);
+        tempCharts[i] = makeDepthChart(t.canvas, "Temperature (°C)");
+      }
+
+      // Mobile zipper: Moist -10, Temp -10, Moist -20, Temp -20, ...
+      // We do NOT create new Chart instances here (we already did).
+      // Instead, we clone the already-created cards? That’s messy, so we’ll
+      // build zipper cards too, but we’ll point them to *their own* charts:
+      // To keep it simple and robust, we create a second set of charts for zipper view.
+      //
+      // BUT: creating 32 charts is heavy.
+      // Better: use a single DOM layout and reorder with CSS? Hard because you want different grouping.
+      //
+      // So we’ll do this: build zipper view DOM that *moves* the same cards (no duplicates)
+      // based on viewport size. That keeps only 16 charts total.
+
+      // We already appended cards to moist/temp columns; we can *also* build zipper by moving
+      // nodes at runtime when the breakpoint flips. We'll do it in a function that runs on load + resize.
+    }
+
+    // We’ll keep references to the actual card DOM nodes so we can move them.
+    let moistCards = new Array(8).fill(null);
+    let tempCards  = new Array(8).fill(null);
+
+    function buildLayoutsAndCards(){
+      // Create cards + charts once, store nodes
+      for (let i = 0; i < 8; i++){
+        const m = makeChartCard(`Moisture ${depthLabel(i)}`);
+        moistCards[i] = m.card;
+        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (units per your sensor)");
+
+        const t = makeChartCard(`Temperature ${depthLabel(i)}`);
+        tempCards[i] = t.card;
+        tempCharts[i] = makeDepthChart(t.canvas, "Temperature (°C)");
+      }
+
+      // Default placement; CSS will show/hide appropriate container.
+      // We still need cards in BOTH possible containers, so we’ll place them based on viewport now.
+      placeCardsForViewport();
+      window.addEventListener("resize", debounce(() => {
+        const before = isMobile();
+        placeCardsForViewport();
+        // after moving, force resize so Chart.js recalculates canvas sizes
+        for (const c of [...moistCharts, ...tempCharts]) c?.resize?.();
+      }, 150));
+    }
+
+    function isMobile(){
+      return window.matchMedia("(max-width: 900px)").matches;
+    }
+
+    function clearContainers(){
+      elMoistCol.innerHTML = "";
+      elTempCol.innerHTML  = "";
+      elZipperCol.innerHTML = "";
+    }
+
+    function placeCardsForViewport(){
+      clearContainers();
+      if (isMobile()){
+        // zipper order
+        for (let i = 0; i < 8; i++){
+          elZipperCol.appendChild(moistCards[i]);
+          elZipperCol.appendChild(tempCards[i]);
+        }
+      } else {
+        // two columns
+        for (let i = 0; i < 8; i++){
+          elMoistCol.appendChild(moistCards[i]);
+          elTempCol.appendChild(tempCards[i]);
+        }
+      }
+    }
+
+    function debounce(fn, wait){
+      let t = null;
+      return (...args) => {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => fn(...args), wait);
+      };
+    }
+
+    function buildRowsForSensor(feeds, sensorName){
+      const rows = feeds
+        .filter(f => (f?.field1 || "").trim() === sensorName)
+        .map(f => {
+          const epoch = Number.parseInt(String(f.field2 || "").trim(), 10);
+          if (!Number.isFinite(epoch)) return null;
+
+          const moist = parseFieldSeries(f.field3);
+          const temp  = parseFieldSeries(f.field4);
+          if (!moist || !temp) return null;
+
+          return { epoch, moist, temp };
+        })
+        .filter(Boolean)
+        .sort((a,b) => a.epoch - b.epoch);
+
+      return rows;
+    }
+
+    function renderSensor(rows, sensorName){
+      for (let i = 0; i < 8; i++){
+        const moistData = rows.map(r => ({ x: r.epoch, y: r.moist[i] }));
+        const tempData  = rows.map(r => ({ x: r.epoch, y: r.temp[i] }));
+
+        moistCharts[i].data.datasets = [{
+          label: `Moisture ${depthLabel(i)}`,
+          showLine: true,
+          data: moistData,
+          borderColor: MOIST_COLOR,
+          backgroundColor: MOIST_COLOR
+        }];
+
+        tempCharts[i].data.datasets = [{
+          label: `Temperature ${depthLabel(i)}`,
+          showLine: true,
+          data: tempData,
+          borderColor: TEMP_COLOR,
+          backgroundColor: TEMP_COLOR
+        }];
+
+        moistCharts[i].update();
+        tempCharts[i].update();
+      }
+
+      setStatus((prev => {
+        const header = (prev || "").split("\n")[0] || "";
+        const headerLine = header.startsWith("Loaded") ? header + "\n" : "";
+        return headerLine + `Showing sensor: ${sensorName}\nUsable rows (parsed): ${rows.length}`;
+      })(elStatus.textContent));
+    }
+
+    async function loadAndRender(){
+      // Keep cards/charts if already built; just fetch + update datasets
+      elSensorSel.disabled = true;
+      elSensorSel.innerHTML = `<option>Loading…</option>`;
+      setStatus("Loading ThingSpeak data…");
+
+      const channelId = elChannelId.value.trim();
+      const readKey   = elReadKey.value.trim();
+      const results   = Number.parseInt(elResults.value.trim(), 10) || 800;
+      const url = buildThingSpeakUrl(channelId, readKey, results);
+
+      let json;
+      try{
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        json = await res.json();
+      } catch(e){
+        setStatus(`Failed to fetch.\nURL: ${url}\nError: ${e?.message || e}`);
+        elSensorSel.innerHTML = `<option>Load failed</option>`;
+        return;
+      }
+
+      const feeds = Array.isArray(json?.feeds) ? json.feeds : [];
+      if (feeds.length === 0){
+        setStatus(`No feeds returned.\nURL: ${url}`);
+        elSensorSel.innerHTML = `<option>No data</option>`;
+        return;
+      }
+
+      const sensors = uniqueSensors(feeds);
+      if (sensors.length === 0){
+        setStatus(`No sensors found in field1.\nURL: ${url}`);
+        elSensorSel.innerHTML = `<option>No sensors found</option>`;
+        return;
+      }
+
+      // Build cards/charts once
+      if (!moistCharts[0] || !tempCharts[0]){
+        destroyAllCharts();
+        buildLayoutsAndCards();
+      } else {
+        // If user rotated / resized before load, ensure placement is correct
+        placeCardsForViewport();
+        for (const c of [...moistCharts, ...tempCharts]) c?.resize?.();
+      }
+
+      // Fill dropdown
+      elSensorSel.disabled = false;
+      elSensorSel.innerHTML = sensors.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+
+      // Render default sensor
+      const defaultSensor = sensors[0];
+      const rows = buildRowsForSensor(feeds, defaultSensor);
+      renderSensor(rows, defaultSensor);
+
+      // Wire dropdown
+      elSensorSel.onchange = () => {
+        const sensorName = elSensorSel.value;
+        const rows2 = buildRowsForSensor(feeds, sensorName);
+        renderSensor(rows2, sensorName);
+      };
+
+      const chName = json?.channel?.name ? ` (${json.channel.name})` : "";
+      setStatus(
+        `Loaded ${feeds.length} rows from channel ${channelId}${chName}.\n` +
+        `Discovered ${sensors.length} sensor(s). Showing: ${defaultSensor}\n` +
+        `Usable rows (parsed): ${rows.length}`
+      );
+    }
+
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[c]));
+    }
+
+    // UI
+    elLoadBtn.addEventListener("click", loadAndRender);
+    loadAndRender();
+  </script>
+
+  <!--
+    Run locally:
+      1) Save as index.html
+      2) python3 -m http.server 8000
+      3) Open http://localhost:8000
+  -->
+</body>
+</html>
+```
