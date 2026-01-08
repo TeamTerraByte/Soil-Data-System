@@ -528,6 +528,7 @@
     }
 
     async function loadAndRender(){
+      saveReadKey(elReadKey.value);
       elSensorSel.disabled = true;
       elSensorSel.innerHTML = `<option>Loading…</option>`;
       setStatus("Loading ThingSpeak data…");
@@ -597,8 +598,34 @@
       }[c]));
     }
 
+    // ---- Persist Read API Key (localStorage) ----
+    const READKEY_STORAGE_KEY = "rs_thingspeak_read_api_key_v1";
+
+    function loadSavedReadKey() {
+      const saved = localStorage.getItem(READKEY_STORAGE_KEY);
+      if (saved && typeof saved === "string") {
+        elReadKey.value = saved;
+      }
+    }
+
+    function saveReadKey(value) {
+      const v = String(value || "").trim();
+      if (v.length === 0) {
+        localStorage.removeItem(READKEY_STORAGE_KEY);
+      } else {
+        localStorage.setItem(READKEY_STORAGE_KEY, v);
+      }
+    }
+
+    // Save on every change (and when leaving the field)
+    elReadKey.addEventListener("input", () => saveReadKey(elReadKey.value));
+    elReadKey.addEventListener("change", () => saveReadKey(elReadKey.value));
+    elReadKey.addEventListener("blur", () => saveReadKey(elReadKey.value));
+
+
     // ---- Init ----
     setTheme(getInitialTheme());
+    loadSavedReadKey();
     elThemeBtn.addEventListener("click", toggleTheme);
     elLoadBtn.addEventListener("click", loadAndRender);
     loadAndRender();
