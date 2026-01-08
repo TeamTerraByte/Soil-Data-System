@@ -165,7 +165,7 @@
       </div>
       <div>
         <label for="results"># Results</label>
-        <input id="results" value="800" inputmode="numeric" />
+        <input id="results" value="200" inputmode="numeric" />
       </div>
     </div>
 
@@ -281,7 +281,7 @@
     function buildThingSpeakUrl(channelId, readKey, results){
       const base = `https://api.thingspeak.com/channels/${encodeURIComponent(channelId)}/feeds.json`;
       const params = new URLSearchParams();
-      params.set("results", String(results || 800));
+      params.set("results", String(results || 200));
       if (readKey && readKey.trim().length > 0) params.set("api_key", readKey.trim());
       return `${base}?${params.toString()}`;
     }
@@ -522,7 +522,7 @@
 
       const channelId = elChannelId.value.trim();
       const readKey   = elReadKey.value.trim();
-      const results   = Number.parseInt(elResults.value.trim(), 10) || 800;
+      const results   = Number.parseInt(elResults.value.trim(), 10) || 200;
       const url = buildThingSpeakUrl(channelId, readKey, results);
 
       let json;
