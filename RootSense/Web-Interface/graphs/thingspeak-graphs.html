@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ThingSpeak Soil Graphs (Zipper + Theme Toggle)</title>
+  <title>ThingSpeak Soil Graphs (Zipper + Theme Toggle + Timestamps)</title>
 
   <style>
     html[data-theme="dark"] { color-scheme: dark; }
@@ -175,7 +175,7 @@
         <select id="sensorSelect" disabled>
           <option>Load data first…</option>
         </select>
-        <div class="muted">Sensors are discovered from <b>field1</b> exactly.</div>
+        <div class="muted">Hover a point to see its <b>created_at</b> timestamp.</div>
       </div>
       <div>
         <label>&nbsp;</label>
@@ -233,7 +233,7 @@
 
     function setStatus(msg){ elStatus.textContent = msg; }
 
-    // ---- Theme (persisted) ----
+    // ---- Theme ----
     function getInitialTheme(){
       const saved = localStorage.getItem("rs_theme");
       if (saved === "dark" || saved === "light") return saved;
@@ -241,32 +241,24 @@
       return prefersDark ? "dark" : "light";
     }
     function currentGraphTextColor(){
-      // Dark theme -> white graph text, Light theme -> black graph text
       const theme = document.documentElement.getAttribute("data-theme") || "dark";
       return theme === "light" ? "#000000" : "#ffffff";
     }
     function currentGridColor(){
-      // Subtle grid lines that match the theme
       const theme = document.documentElement.getAttribute("data-theme") || "dark";
       return theme === "light" ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.15)";
     }
-
     function applyChartTheme(){
       const textColor = currentGraphTextColor();
       const gridColor = currentGridColor();
-
       for (const chart of [...moistCharts, ...tempCharts]){
         if (!chart) continue;
-
-        // Legend text
         chart.options.plugins.legend.labels.color = textColor;
 
-        // X scale
         chart.options.scales.x.title.color = textColor;
         chart.options.scales.x.ticks.color = textColor;
         chart.options.scales.x.grid.color  = gridColor;
 
-        // Y scale
         chart.options.scales.y.title.color = textColor;
         chart.options.scales.y.ticks.color = textColor;
         chart.options.scales.y.grid.color  = gridColor;
@@ -274,12 +266,10 @@
         chart.update();
       }
     }
-
     function setTheme(theme){
       document.documentElement.setAttribute("data-theme", theme);
       localStorage.setItem("rs_theme", theme);
       applyChartTheme();
-      // Ensure canvases recalc after CSS changes
       for (const c of [...moistCharts, ...tempCharts]) c?.resize?.();
     }
     function toggleTheme(){
@@ -316,14 +306,25 @@
       }
       return Array.from(set).sort((a,b) => a.localeCompare(b));
     }
+
+    function parseCreatedAtToMs(createdAt){
+      // created_at includes timezone offset, so Date() parses it well.
+      const ms = new Date(createdAt).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    function formatCreatedAt(createdAt){
+      const d = new Date(createdAt);
+      if (Number.isNaN(d.getTime())) return String(createdAt);
+      return d.toLocaleString(); // local display
+    }
     function formatEpochTick(value){
-      const ms = Number(value) * 1000;
-      const d = new Date(ms);
+      // value is milliseconds (ms) in this version
+      const d = new Date(Number(value));
       if (Number.isNaN(d.getTime())) return String(value);
       return d.toLocaleString();
     }
 
-    // ---- Layout (desktop columns vs mobile zipper) ----
+    // ---- Layout ----
     function isMobile(){ return window.matchMedia("(max-width: 900px)").matches; }
     function clearContainers(){
       elMoistCol.innerHTML  = "";
@@ -352,7 +353,7 @@
       };
     }
 
-    // ---- Chart creation ----
+    // ---- Charts ----
     function makeDepthChart(canvas, yLabel){
       const textColor = currentGraphTextColor();
       const gridColor = currentGridColor();
@@ -373,8 +374,13 @@
             tooltip: {
               callbacks: {
                 title: (items) => {
-                  const x = items?.[0]?.raw?.x;
-                  return x != null ? formatEpochTick(x) : "";
+                  // Use created_at label stored on the point object
+                  const p = items?.[0]?.raw;
+                  return p?.created_at_label ? p.created_at_label : "";
+                },
+                label: (item) => {
+                  const y = item?.raw?.y;
+                  return Number.isFinite(y) ? `Value: ${y}` : `Value: ${y}`;
                 }
               }
             }
@@ -382,7 +388,7 @@
           scales: {
             x: {
               type: "linear",
-              title: { display: true, text: "Time", color: textColor },
+              title: { display: true, text: "Time (created_at)", color: textColor },
               ticks: { color: textColor, callback: (val) => formatEpochTick(val) },
               grid: { color: gridColor }
             },
@@ -439,30 +445,45 @@
       }, 150));
     }
 
-    // ---- Data parsing / rendering ----
+    // ---- Data parse / render (NOW uses created_at for x + point labeling) ----
     function buildRowsForSensor(feeds, sensorName){
       const rows = feeds
         .filter(f => (f?.field1 || "").trim() === sensorName)
         .map(f => {
-          const epoch = Number.parseInt(String(f.field2 || "").trim(), 10);
-          if (!Number.isFinite(epoch)) return null;
+          const createdAt = String(f.created_at || "").trim();
+          const ms = parseCreatedAtToMs(createdAt);
+          if (!Number.isFinite(ms)) return null;
 
           const moist = parseFieldSeries(f.field3);
           const temp  = parseFieldSeries(f.field4);
           if (!moist || !temp) return null;
 
-          return { epoch, moist, temp };
+          return {
+            ms,
+            created_at: createdAt,
+            created_at_label: formatCreatedAt(createdAt),
+            moist,
+            temp
+          };
         })
         .filter(Boolean)
-        .sort((a,b) => a.epoch - b.epoch);
+        .sort((a,b) => a.ms - b.ms);
 
       return rows;
     }
 
     function renderSensor(rows, sensorName){
       for (let i = 0; i < 8; i++){
-        const moistData = rows.map(r => ({ x: r.epoch, y: r.moist[i] }));
-        const tempData  = rows.map(r => ({ x: r.epoch, y: r.temp[i] }));
+        const moistData = rows.map(r => ({
+          x: r.ms,
+          y: r.moist[i],
+          created_at_label: r.created_at_label
+        }));
+        const tempData  = rows.map(r => ({
+          x: r.ms,
+          y: r.temp[i],
+          created_at_label: r.created_at_label
+        }));
 
         moistCharts[i].data.datasets = [{
           label: `Moisture ${DEPTHS_CM[i]} cm`,
@@ -484,13 +505,13 @@
         tempCharts[i].update();
       }
 
-      // Ensure text colors match the current theme (important after updates)
       applyChartTheme();
 
       setStatus((prev => {
         const header = (prev || "").split("\n")[0] || "";
         const headerLine = header.startsWith("Loaded") ? header + "\n" : "";
-        return headerLine + `Showing sensor: ${sensorName}\nUsable rows (parsed): ${rows.length}`;
+        const latest = rows.length ? rows[rows.length - 1].created_at_label : "n/a";
+        return headerLine + `Showing sensor: ${sensorName}\nUsable rows (parsed): ${rows.length}\nLatest created_at: ${latest}`;
       })(elStatus.textContent));
     }
 
@@ -529,7 +550,6 @@
         return;
       }
 
-      // Build charts once
       if (!moistCharts[0] || !tempCharts[0]){
         destroyAllCharts();
         buildCardsAndChartsOnce();
@@ -538,16 +558,13 @@
         for (const c of [...moistCharts, ...tempCharts]) c?.resize?.();
       }
 
-      // Fill dropdown
       elSensorSel.disabled = false;
       elSensorSel.innerHTML = sensors.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
 
-      // Render default sensor
       const defaultSensor = sensors[0];
       const rows = buildRowsForSensor(feeds, defaultSensor);
       renderSensor(rows, defaultSensor);
 
-      // Wire dropdown
       elSensorSel.onchange = () => {
         const sensorName = elSensorSel.value;
         const rows2 = buildRowsForSensor(feeds, sensorName);

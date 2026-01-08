@@ -266,6 +266,7 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
         }
       }
     }
+    delay(15000);  // avoid Thingspeak rate limiting
   }
   return recvd;
 }
