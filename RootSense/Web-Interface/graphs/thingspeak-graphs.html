@@ -783,7 +783,7 @@
       for (let i = 0; i < 8; i++){
         const m = makeChartCard(`Moisture ${depthLabel(i)}`);
         moistCards[i]  = m.card;
-        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (units per your sensor)");
+        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (percent)");
 
         const t = makeChartCard(`Temperature ${depthLabel(i)}`);
         tempCards[i]  = t.card;
@@ -1041,7 +1041,7 @@
       for (let i = 0; i < 8; i++){
         const m = makeChartCard(`Moisture ${depthLabel(i)}`);
         moistCards[i]  = m.card;
-        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (units per your sensor)");
+        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (percent)");
 
         const t = makeChartCard(`Temperature ${depthLabel(i)}`);
         tempCards[i]  = t.card;
