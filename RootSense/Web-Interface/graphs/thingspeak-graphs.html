@@ -5,164 +5,255 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ThingSpeak Soil Graphs (Zipper + Theme Toggle + Timestamps)</title>
 
-  <style>
-    html[data-theme="dark"] { color-scheme: dark; }
-    html[data-theme="light"] { color-scheme: light; }
+ <style>
+  html[data-theme="dark"] { color-scheme: dark; }
+  html[data-theme="light"] { color-scheme: light; }
 
-    body{
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      margin:0;
-      padding:16px;
-      max-width: 1250px;
-      margin-inline:auto;
-      background: var(--bg);
-      color: var(--fg);
-    }
+  :root{
+    --ctrl-h: 40px;   /* tweak to 38px or 39px if you want tighter */
+    --ctrl-py: 8px;   /* vertical padding baseline */
+  }
 
-    html[data-theme="light"]{
-      --bg:#ffffff; --fg:#111111; --card:#f6f7f9; --border:#c8ccd3;
-      --input-bg:#ffffff; --input-fg:#111111; --muted:rgba(0,0,0,0.75);
-      --btn-bg:#111111; --btn-fg:#ffffff; --btn-border:#111111;
-      --error:#b00020;
-    }
+  body{
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin:0;
+    padding:16px;
+    max-width: 1250px;
+    margin-inline:auto;
+    background: var(--bg);
+    color: var(--fg);
+  }
 
-    html[data-theme="dark"]{
-      --bg:#0b0d10; --fg:#ffffff; --card:#121620; --border:rgba(255,255,255,0.20);
-      --input-bg:#0f131b; --input-fg:#ffffff; --muted:rgba(255,255,255,0.80);
-      --btn-bg:#ffffff; --btn-fg:#111111; --btn-border:#ffffff;
-      --error:#ff6b6b;
-    }
+  html[data-theme="light"]{
+    --bg:#ffffff; --fg:#111111; --card:#f6f7f9; --border:#c8ccd3;
+    --input-bg:#ffffff; --input-fg:#111111; --muted:rgba(0,0,0,0.75);
+    --btn-bg:#111111; --btn-fg:#ffffff; --btn-border:#111111;
+    --error:#b00020;
+  }
 
-    h1{ font-size:1.2rem; margin:0; }
-    h2{ font-size:1.05rem; margin:0 0 10px; }
-    h3{ font-size:1rem; margin:0 0 8px; }
+  html[data-theme="dark"]{
+    --bg:#0b0d10; --fg:#ffffff; --card:#121620; --border:rgba(255,255,255,0.20);
+    --input-bg:#0f131b; --input-fg:#ffffff; --muted:rgba(255,255,255,0.80);
+    --btn-bg:#ffffff; --btn-fg:#111111; --btn-border:#ffffff;
+    --error:#ff6b6b;
+  }
 
-    .topbar{
-      display:flex;
-      align-items:center;
-      justify-content: space-between;
-      gap:12px;
-      margin-bottom: 12px;
-    }
-    .themeBtn{
-      width:auto;
-      padding:10px 12px;
-      border-radius: 10px;
-      border: 1px solid var(--btn-border);
-      background: var(--btn-bg);
-      color: var(--btn-fg);
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-    }
+  h1{ font-size:1.2rem; margin:0; }
+  h2{ font-size:1.05rem; margin:0 0 10px; }
+  h3{ font-size:1rem; margin:0 0 8px; }
 
-    .card{
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:12px;
-      margin:12px 0;
-      background: var(--card);
-    }
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap:12px;
+    margin-bottom: 12px;
+  }
+  .themeBtn{
+    width:auto;
+    padding:10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--btn-border);
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
 
-    label{ display:block; font-size:.9rem; margin-bottom:6px; color: var(--fg); }
-    input, select, button{
-      width:100%;
-      padding:10px;
-      border-radius:10px;
-      border:1px solid var(--border);
-      background: var(--input-bg);
-      color: var(--input-fg);
-      box-sizing:border-box;
-    }
-    button{ cursor:pointer; font-weight:600; }
+  .card{
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:14px;
+    margin:12px 0;
+    background: var(--card);
+  }
 
-    .grid3{
-      display:grid;
-      grid-template-columns: 1.2fr 1.2fr 0.6fr;
-      gap:12px;
-      align-items:end;
-    }
-    .row2{
-      display:grid;
-      grid-template-columns: 1fr 0.35fr;
-      gap:12px;
-      align-items:end;
-      margin-top:12px;
-    }
+  label{ display:block; font-size:.9rem; margin-bottom:6px; color: var(--fg); }
+  input, select, button{
+    width:100%;
+    height: var(--ctrl-h);
+    padding: var(--ctrl-py) 10px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--input-fg);
+    box-sizing:border-box;
+    line-height: 1;          /* key: prevents tall inline box */
+  }
 
-    /* Date UI: text range + GUI day range */
-    .rowDate{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:12px;
-      align-items:start;
-      margin-top:12px;
-    }
+  button{
+    cursor:pointer;
+    font-weight:700;
+    display:flex;            /* key: centers text nicely */
+    align-items:center;
+    justify-content:center;
+    white-space:nowrap;
+  }
 
-    /* helper row spans both columns */
-    .rowDateHelp{
-      grid-column: 1 / -1;
-      margin-top: -6px; /* optional: pulls helper closer to inputs */
-    }
-    .rowDate2{
-      display:grid;
-      grid-template-columns: 1fr 1fr 0.5fr;
-      gap:12px;
-      align-items:end;
-      margin-top:12px;
-    }
 
-    @media (max-width: 900px){
-      .grid3{ grid-template-columns:1fr; }
-      .row2{ grid-template-columns:1fr; }
-      .rowDate{ grid-template-columns:1fr; }
-      .rowDate2{ grid-template-columns:1fr; }
-      .topbar{ flex-direction: column; align-items: stretch; }
-      .themeBtn{ width: 100%; }
-    }
+  .muted{ color: var(--muted); font-size:.92rem; }
+  .help{ margin-top:6px; }
+  .errorText{
+    color: var(--error);
+    font-weight: 650;
+    margin-top: 10px;
+    white-space: pre-wrap;
+    font-size: .95rem;
+  }
 
-    .muted{ color: var(--muted); font-size:.95rem; margin-top:6px; }
-    .status{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      white-space: pre-wrap;
-      font-size: .9rem;
-      color: var(--muted);
-      margin-top: 12px;
-    }
-    .errorText{
-      color: var(--error);
-      font-weight: 600;
-      margin-top: 8px;
-      white-space: pre-wrap;
-      font-size: .95rem;
-    }
+  /* ----------------------------
+     NEW CONTROL PANEL LAYOUT
+     ---------------------------- */
+  .controls{
+    display:grid;
+    gap:14px;
+  }
 
-    /* Desktop: two columns (moist left, temp right) */
-    .twoCol{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:14px;
-      align-items:start;
-    }
-    .col{
-      display:grid;
+  .rowTop{
+    display:grid;
+    grid-template-columns: 1fr 1.3fr 0.55fr 0.6fr;
+    gap:12px;
+    align-items:start; /* was end */
+  }
+  
+  .rowTop > div { display:flex; flex-direction:column; }
+  .rowTop .help { margin-top:6px; min-height: 18px; }  /* keeps row consistent */
+
+
+
+  .rowSensor{
+    display:grid;
+    grid-template-columns: 1fr;
+    gap:6px;
+  }
+
+  .filters{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:12px;
+    align-items:start;
+  }
+
+  .subcard{
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:12px;
+    background: rgba(0,0,0,0.02);
+  }
+  html[data-theme="dark"] .subcard{
+    background: rgba(255,255,255,0.03);
+  }
+
+  .subhead{
+    font-size:.95rem;
+    font-weight:800;
+    margin:0 0 10px;
+    opacity:.95;
+  }
+
+  .row2col{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:12px;
+    align-items:end;
+  }
+
+  .rowApply{
+    display:grid;
+    grid-template-columns: 0.55fr 1fr;
+    gap:12px;
+    align-items:end;
+    margin-top:10px;
+  }
+  .validInline{
+    text-align:left;
+    font-size:.9rem;
+    color: var(--muted);
+    padding:10px 10px;
+    border-radius:10px;
+    border:1px dashed var(--border);
+    background: rgba(0,0,0,0.02);
+  }
+  html[data-theme="dark"] .validInline{
+    background: rgba(255,255,255,0.03);
+  }
+
+  .btnPrimary{
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    border: 1px solid var(--btn-border);
+  }
+
+  details.statusWrap{
+    margin-top:10px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  details.statusWrap > summary{
+    cursor:pointer;
+    user-select:none;
+    font-weight:800;
+    color: var(--fg);
+    margin-bottom: 8px;
+  }
+  .status{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    white-space: pre-wrap;
+    font-size: .9rem;
+    color: var(--muted);
+    margin:0;
+  }
+
+  @media (max-width: 900px){
+    .topbar{ flex-direction: column; align-items: stretch; }
+    .themeBtn{ width: 100%; }
+
+    .rowTop{
       grid-template-columns: 1fr;
-      gap:14px;
     }
 
-    /* Mobile: zipper merge */
-    .zipper{
-      display:none;
+    .filters{
       grid-template-columns: 1fr;
-      gap:14px;
-    }
-    @media (max-width: 900px){
-      .twoCol{ display:none; }
-      .zipper{ display:grid; }
     }
 
-    .chartCard canvas{ width:100% !important; height:260px !important; }
-  </style>
+    .row2col{
+      grid-template-columns: 1fr;
+    }
+
+    .rowApply{
+      grid-template-columns: 1fr;
+    }
+
+    .validInline{
+      text-align:left;
+    }
+  }
+
+  /* Existing chart layout kept */
+  .twoCol{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:14px;
+    align-items:start;
+  }
+  .col{
+    display:grid;
+    grid-template-columns: 1fr;
+    gap:14px;
+  }
+  .zipper{
+    display:none;
+    grid-template-columns: 1fr;
+    gap:14px;
+  }
+  @media (max-width: 900px){
+    .twoCol{ display:none; }
+    .zipper{ display:grid; }
+  }
+  .chartCard canvas{ width:100% !important; height:260px !important; }
+</style>
+
 </head>
 
 <body>
@@ -171,80 +262,102 @@
     <button class="themeBtn" id="themeToggleBtn" type="button">Toggle Dark/Light</button>
   </div>
 
-  <div class="card">
-    <div class="grid3">
+<div class="card">
+  <div class="controls">
+
+    <!-- Top row: connection + load -->
+    <div class="rowTop">
       <div>
         <label for="channelId">Channel ID</label>
         <input id="channelId" value="3002040" inputmode="numeric" />
       </div>
+
       <div>
-        <label for="readKey">Read API Key (optional for public channels)</label>
+        <label for="readKey">Read API Key</label>
         <input id="readKey" placeholder="XXXXXXXXXXXXXXXX" />
+        <div class="muted help">Optional for public channels.</div>
       </div>
+
       <div>
         <label for="results"># Results</label>
         <input id="results" value="200" inputmode="numeric" />
       </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="loadBtn" class="btnPrimary" type="button">Load / Refresh</button>
+      </div>
     </div>
 
-    <div class="row2">
+    <!-- Sensor row -->
+    <div class="rowSensor">
       <div>
-        <label for="sensorSelect">Select sensor (field1)</label>
+        <label for="sensorSelect">Sensor (field1)</label>
         <select id="sensorSelect" disabled>
           <option>Load data first…</option>
         </select>
-        <div class="muted">Hover a point to see its <b>created_at</b> timestamp.</div>
-      </div>
-      <div>
-        <label>&nbsp;</label>
-        <button id="loadBtn" type="button">Load / Refresh</button>
+        <div class="muted help">Hover a point to see its <b>created_at</b> timestamp.</div>
       </div>
     </div>
 
-    <!-- Text range (date+time) -->
-<!-- Text range (date+time) -->
-<div class="rowDate">
-  <div>
-    <label for="startText">Start (text, date+time)</label>
-    <input id="startText" placeholder="YYYY-MM-DD HH:MM[:SS]" />
-  </div>
+    <!-- Filters -->
+    <div class="filters">
 
-  <div>
-    <label for="endText">End (text, date+time)</label>
-    <input id="endText" placeholder="YYYY-MM-DD HH:MM[:SS]" />
-  </div>
-
-  <div class="rowDateHelp muted">
-    Example Date: 2026-01-07 10:43:12
-  </div>
-</div>
-
-
-    <!-- GUI day range -->
-    <div class="rowDate2">
-      <div>
-        <label for="startDay">Start day (GUI)</label>
-        <input id="startDay" type="date" />
+      <!-- Text date+time -->
+      <div class="subcard">
+        <div class="subhead">Text filter (date + time)</div>
+        <div class="row2col">
+          <div>
+            <label for="startText">Start</label>
+            <input id="startText" placeholder="YYYY-MM-DD HH:MM[:SS]" />
+          </div>
+          <div>
+            <label for="endText">End</label>
+            <input id="endText" placeholder="YYYY-MM-DD HH:MM[:SS]" />
+          </div>
+        </div>
+        <div class="muted help">Example: <b>2026-01-07 10:43:12</b></div>
       </div>
-      <div>
-        <label for="endDay">End day (GUI)</label>
-        <input id="endDay" type="date" />
-      </div>
-      <div>
-        <label>&nbsp;</label>
-        <button id="applyDateBtn" type="button">Apply</button>
-        <div class="muted" id="validRangeText"></div>
-      </div>
-    </div>
 
-    <div class="muted">
-      If GUI days are set, the filter includes <b>all timestamps</b> from the start day at 00:00:00 through the end day at 23:59:59 (local time).
-      Otherwise, it uses the text date+time range.
+      <!-- GUI day range -->
+      <div class="subcard">
+        <div class="subhead">GUI filter (day range)</div>
+        <div class="row2col">
+          <div>
+            <label for="startDay">Start day</label>
+            <input id="startDay" type="date" />
+          </div>
+          <div>
+            <label for="endDay">End day</label>
+            <input id="endDay" type="date" />
+          </div>
+        </div>
+
+        <div class="rowApply">
+          <div>
+            <button id="applyDateBtn" type="button">Apply</button>
+          </div>
+          <div class="validInline" id="validRangeText">Valid: (load data)</div>
+        </div>
+
+        <div class="muted help">
+          Includes <b>all timestamps</b> from start day 00:00:00 through end day 23:59:59 (local time).
+          If GUI days are blank, the text filter is used.
+        </div>
+      </div>
+
     </div>
 
     <div class="errorText" id="dateError"></div>
-    <div class="status" id="status"></div>
+
+    <!-- Status: collapsible so it doesn't dominate the UI -->
+    <details class="statusWrap" open>
+      <summary>Details</summary>
+      <pre class="status" id="status"></pre>
+    </details>
+
   </div>
+</div>
 
   <!-- Desktop / tablet layout -->
   <div class="card twoCol" id="twoColLayout">
