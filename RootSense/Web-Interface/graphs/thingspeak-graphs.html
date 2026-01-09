@@ -31,6 +31,7 @@
       --btn-bg: #111111;
       --btn-fg: #ffffff;
       --btn-border: #111111;
+      --error: #b00020;
     }
 
     /* Dark theme (high contrast) */
@@ -45,6 +46,7 @@
       --btn-bg: #ffffff;
       --btn-fg: #111111;
       --btn-border: #ffffff;
+      --error: #ff6b6b;
     }
 
     h1{ font-size:1.2rem; margin:0; }
@@ -103,9 +105,18 @@
       align-items:end;
       margin-top:12px;
     }
+    .rowDate{
+      display:grid;
+      grid-template-columns: 1fr 1fr 0.35fr;
+      gap:12px;
+      align-items:end;
+      margin-top:12px;
+    }
+
     @media (max-width: 900px){
       .grid3{ grid-template-columns:1fr; }
       .row2{ grid-template-columns:1fr; }
+      .rowDate{ grid-template-columns:1fr; }
       .topbar{ flex-direction: column; align-items: stretch; }
       .themeBtn{ width: 100%; }
     }
@@ -117,6 +128,13 @@
       font-size: .9rem;
       color: var(--muted);
       margin-top: 12px;
+    }
+    .errorText{
+      color: var(--error);
+      font-weight: 600;
+      margin-top: 8px;
+      white-space: pre-wrap;
+      font-size: .95rem;
     }
 
     /* Desktop: two columns (moist left, temp right) */
@@ -183,6 +201,28 @@
       </div>
     </div>
 
+    <!-- Date range controls -->
+    <div class="rowDate">
+      <div>
+        <label for="startDate">Start date/time</label>
+        <input id="startDate" type="datetime-local" step="1" />
+        <input id="startDateText" placeholder="Or type: YYYY-MM-DD HH:MM[:SS]" />
+      </div>
+
+      <div>
+        <label for="endDate">End date/time</label>
+        <input id="endDate" type="datetime-local" step="1" />
+        <input id="endDateText" placeholder="Or type: YYYY-MM-DD HH:MM[:SS]" />
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="applyDateBtn" type="button">Apply Date Range</button>
+        <div class="muted" id="validRangeText"></div>
+      </div>
+    </div>
+
+    <div class="errorText" id="dateError"></div>
     <div class="status" id="status"></div>
   </div>
 
@@ -226,12 +266,35 @@
     const elTempCol   = document.getElementById("tempCol");
     const elZipperCol = document.getElementById("zipperCol");
 
+    // Date UI
+    const elStartDate = document.getElementById("startDate");
+    const elEndDate   = document.getElementById("endDate");
+    const elStartDateText = document.getElementById("startDateText");
+    const elEndDateText   = document.getElementById("endDateText");
+    const elApplyDateBtn  = document.getElementById("applyDateBtn");
+    const elValidRangeText = document.getElementById("validRangeText");
+    const elDateError = document.getElementById("dateError");
+
     let moistCharts = new Array(8).fill(null);
     let tempCharts  = new Array(8).fill(null);
     let moistCards  = new Array(8).fill(null);
     let tempCards   = new Array(8).fill(null);
 
+    // Keep last fetched feeds so date changes don't refetch.
+    let lastFeeds = [];
+    let lastSensors = [];
+    let currentSensorName = null;
+
+    // Computed from lastFeeds (global across sensors)
+    let dataMinMs = null;
+    let dataMaxMs = null;
+
+    // Active user-selected range (ms). null means "no filter".
+    let activeStartMs = null;
+    let activeEndMs   = null;
+
     function setStatus(msg){ elStatus.textContent = msg; }
+    function setDateError(msg){ elDateError.textContent = msg || ""; }
 
     // ---- Theme ----
     function getInitialTheme(){
@@ -308,20 +371,145 @@
     }
 
     function parseCreatedAtToMs(createdAt){
-      // created_at includes timezone offset, so Date() parses it well.
       const ms = new Date(createdAt).getTime();
       return Number.isFinite(ms) ? ms : null;
     }
     function formatCreatedAt(createdAt){
       const d = new Date(createdAt);
       if (Number.isNaN(d.getTime())) return String(createdAt);
-      return d.toLocaleString(); // local display
+      return d.toLocaleString();
     }
     function formatEpochTick(value){
-      // value is milliseconds (ms) in this version
       const d = new Date(Number(value));
       if (Number.isNaN(d.getTime())) return String(value);
       return d.toLocaleString();
+    }
+
+    // ---- Date range parsing/validation ----
+    // datetime-local values are local time with no TZ info; convert to ms in local time.
+    function datetimeLocalToMs(v){
+      // v: "YYYY-MM-DDTHH:MM" or "YYYY-MM-DDTHH:MM:SS"
+      if (!v || typeof v !== "string") return null;
+      const ms = new Date(v).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    // Accepts "YYYY-MM-DD HH:MM[:SS]" or ISO-ish "YYYY-MM-DDTHH:MM[:SS]"
+    function parseTypedDateToMs(s){
+      if (!s || typeof s !== "string") return null;
+      const t = s.trim();
+      if (!t) return null;
+
+      const normalized = t.includes("T") ? t : t.replace(" ", "T");
+      const ms = new Date(normalized).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    function msToDatetimeLocal(ms){
+      const d = new Date(ms);
+      if (Number.isNaN(d.getTime())) return "";
+      const pad = (n) => String(n).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      const mm = pad(d.getMonth() + 1);
+      const dd = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mi = pad(d.getMinutes());
+      const ss = pad(d.getSeconds());
+      return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`;
+    }
+
+    function updateValidRangeUI(){
+      if (!Number.isFinite(dataMinMs) || !Number.isFinite(dataMaxMs)) {
+        elValidRangeText.textContent = "";
+        elStartDate.min = "";
+        elStartDate.max = "";
+        elEndDate.min = "";
+        elEndDate.max = "";
+        return;
+      }
+
+      const minStr = new Date(dataMinMs).toLocaleString();
+      const maxStr = new Date(dataMaxMs).toLocaleString();
+      elValidRangeText.textContent = `Valid range: ${minStr} → ${maxStr}`;
+
+      // Set min/max on datetime-local pickers
+      const minLocal = msToDatetimeLocal(dataMinMs);
+      const maxLocal = msToDatetimeLocal(dataMaxMs);
+      elStartDate.min = minLocal;
+      elStartDate.max = maxLocal;
+      elEndDate.min = minLocal;
+      elEndDate.max = maxLocal;
+    }
+
+    function setDefaultDateRangeFromData(){
+      if (!Number.isFinite(dataMinMs) || !Number.isFinite(dataMaxMs)) return;
+      // Default: full range
+      activeStartMs = dataMinMs;
+      activeEndMs = dataMaxMs;
+
+      elStartDate.value = msToDatetimeLocal(activeStartMs);
+      elEndDate.value   = msToDatetimeLocal(activeEndMs);
+
+      // Mirror into text boxes
+      elStartDateText.value = new Date(activeStartMs).toLocaleString();
+      elEndDateText.value   = new Date(activeEndMs).toLocaleString();
+    }
+
+    function readDateRangeFromInputs(){
+      // Prefer GUI inputs if present; fall back to typed inputs.
+      let startMs = datetimeLocalToMs(elStartDate.value);
+      let endMs   = datetimeLocalToMs(elEndDate.value);
+
+      if (!Number.isFinite(startMs)) startMs = parseTypedDateToMs(elStartDateText.value);
+      if (!Number.isFinite(endMs))   endMs   = parseTypedDateToMs(elEndDateText.value);
+
+      return { startMs, endMs };
+    }
+
+    function validateAndApplyDateRange(){
+      setDateError("");
+
+      if (!Number.isFinite(dataMinMs) || !Number.isFinite(dataMaxMs)) {
+        setDateError("Load data first so the valid date range can be determined.");
+        return false;
+      }
+
+      const { startMs, endMs } = readDateRangeFromInputs();
+
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+        setDateError("Invalid date/time. Use the picker or type like: 2026-01-07 10:43:12");
+        return false;
+      }
+
+      if (startMs > endMs) {
+        setDateError("Start must be earlier than (or equal to) End.");
+        return false;
+      }
+
+      if (startMs < dataMinMs || endMs > dataMaxMs) {
+        const minStr = new Date(dataMinMs).toLocaleString();
+        const maxStr = new Date(dataMaxMs).toLocaleString();
+        setDateError(`Out of range. Choose between:\n${minStr}\n${maxStr}`);
+        return false;
+      }
+
+      activeStartMs = startMs;
+      activeEndMs   = endMs;
+
+      // Normalize GUI inputs to exact parsed values
+      elStartDate.value = msToDatetimeLocal(activeStartMs);
+      elEndDate.value   = msToDatetimeLocal(activeEndMs);
+
+      // Keep typed boxes in sync (human-readable)
+      elStartDateText.value = new Date(activeStartMs).toLocaleString();
+      elEndDateText.value   = new Date(activeEndMs).toLocaleString();
+
+      // Re-render all charts
+      if (currentSensorName && Array.isArray(lastFeeds) && lastFeeds.length) {
+        const rows = buildRowsForSensor(lastFeeds, currentSensorName);
+        renderSensor(rows, currentSensorName);
+      }
+      return true;
     }
 
     // ---- Layout ----
@@ -377,7 +565,6 @@
               intersect: true,
               callbacks: {
                 title: (items) => {
-                  // Use created_at label stored on the point object
                   const p = items?.[0]?.raw;
                   return p?.created_at_label ? p.created_at_label : "";
                 },
@@ -408,8 +595,8 @@
           },
           elements: {
             line: { tension: 0.15 },
-            point: { 
-              radius: 2.2, 
+            point: {
+              radius: 2.2,
               hoverRadius: 5,
               hitRadius: 10
             }
@@ -457,7 +644,7 @@
       }, 150));
     }
 
-    // ---- Data parse / render (NOW uses created_at for x + point labeling) ----
+    // ---- Data parse / render (created_at for x + point labeling) ----
     function buildRowsForSensor(feeds, sensorName){
       const rows = feeds
         .filter(f => (f?.field1 || "").trim() === sensorName)
@@ -465,6 +652,10 @@
           const createdAt = String(f.created_at || "").trim();
           const ms = parseCreatedAtToMs(createdAt);
           if (!Number.isFinite(ms)) return null;
+
+          // Apply global date filter (if set)
+          if (Number.isFinite(activeStartMs) && ms < activeStartMs) return null;
+          if (Number.isFinite(activeEndMs) && ms > activeEndMs) return null;
 
           const moist = parseFieldSeries(f.field3);
           const temp  = parseFieldSeries(f.field4);
@@ -485,6 +676,8 @@
     }
 
     function renderSensor(rows, sensorName){
+      currentSensorName = sensorName;
+
       for (let i = 0; i < 8; i++){
         const moistData = rows.map(r => ({
           x: r.ms,
@@ -519,16 +712,43 @@
 
       applyChartTheme();
 
+      const earliest = rows.length ? rows[0].created_at_label : "n/a";
+      const latest = rows.length ? rows[rows.length - 1].created_at_label : "n/a";
+      const filterInfo = (Number.isFinite(activeStartMs) && Number.isFinite(activeEndMs))
+        ? `Filter: ${new Date(activeStartMs).toLocaleString()} → ${new Date(activeEndMs).toLocaleString()}`
+        : "Filter: (none)";
+
       setStatus((prev => {
         const header = (prev || "").split("\n")[0] || "";
         const headerLine = header.startsWith("Loaded") ? header + "\n" : "";
-        const latest = rows.length ? rows[rows.length - 1].created_at_label : "n/a";
-        return headerLine + `Showing sensor: ${sensorName}\nUsable rows (parsed): ${rows.length}\nLatest created_at: ${latest}`;
+        return headerLine +
+          `Showing sensor: ${sensorName}\n` +
+          `Usable rows (parsed + in range): ${rows.length}\n` +
+          `Earliest in view: ${earliest}\n` +
+          `Latest in view: ${latest}\n` +
+          `${filterInfo}`;
       })(elStatus.textContent));
+    }
+
+    function computeGlobalMinMaxMs(feeds){
+      let min = Infinity;
+      let max = -Infinity;
+      for (const f of feeds){
+        const ms = parseCreatedAtToMs(f?.created_at);
+        if (!Number.isFinite(ms)) continue;
+        if (ms < min) min = ms;
+        if (ms > max) max = ms;
+      }
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min === Infinity || max === -Infinity) {
+        return { minMs: null, maxMs: null };
+      }
+      return { minMs: min, maxMs: max };
     }
 
     async function loadAndRender(){
       saveReadKey(elReadKey.value);
+      setDateError("");
+
       elSensorSel.disabled = true;
       elSensorSel.innerHTML = `<option>Loading…</option>`;
       setStatus("Loading ThingSpeak data…");
@@ -556,7 +776,23 @@
         return;
       }
 
+      lastFeeds = feeds;
+
+      // Global valid range (across everything fetched)
+      const mm = computeGlobalMinMaxMs(feeds);
+      dataMinMs = mm.minMs;
+      dataMaxMs = mm.maxMs;
+      updateValidRangeUI();
+
+      // If this is the first load (or date range invalid), reset filter to full range.
+      if (!Number.isFinite(activeStartMs) || !Number.isFinite(activeEndMs) ||
+          activeStartMs < dataMinMs || activeEndMs > dataMaxMs) {
+        setDefaultDateRangeFromData();
+      }
+
       const sensors = uniqueSensors(feeds);
+      lastSensors = sensors;
+
       if (sensors.length === 0){
         setStatus(`No sensors found in field1.\nURL: ${url}`);
         elSensorSel.innerHTML = `<option>No sensors found</option>`;
@@ -580,7 +816,7 @@
 
       elSensorSel.onchange = () => {
         const sensorName = elSensorSel.value;
-        const rows2 = buildRowsForSensor(feeds, sensorName);
+        const rows2 = buildRowsForSensor(lastFeeds, sensorName);
         renderSensor(rows2, sensorName);
       };
 
@@ -588,7 +824,7 @@
       setStatus(
         `Loaded ${feeds.length} rows from channel ${channelId}${chName}.\n` +
         `Discovered ${sensors.length} sensor(s). Showing: ${defaultSensor}\n` +
-        `Usable rows (parsed): ${rows.length}`
+        `Usable rows (parsed + in range): ${rows.length}`
       );
     }
 
@@ -617,11 +853,20 @@
       }
     }
 
-    // Save on every change (and when leaving the field)
     elReadKey.addEventListener("input", () => saveReadKey(elReadKey.value));
     elReadKey.addEventListener("change", () => saveReadKey(elReadKey.value));
     elReadKey.addEventListener("blur", () => saveReadKey(elReadKey.value));
 
+    // Date UI wiring
+    elApplyDateBtn.addEventListener("click", () => validateAndApplyDateRange());
+
+    // If user types in the text boxes, pressing Enter applies
+    elStartDateText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyDateRange(); });
+    elEndDateText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyDateRange(); });
+
+    // If user changes the GUI pickers, auto-apply (validated)
+    elStartDate.addEventListener("change", () => validateAndApplyDateRange());
+    elEndDate.addEventListener("change", () => validateAndApplyDateRange());
 
     // ---- Init ----
     setTheme(getInitialTheme());
