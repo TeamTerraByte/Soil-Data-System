@@ -19,34 +19,18 @@
       color: var(--fg);
     }
 
-    /* Light theme (high contrast) */
     html[data-theme="light"]{
-      --bg: #ffffff;
-      --fg: #111111;
-      --card: #f6f7f9;
-      --border: #c8ccd3;
-      --input-bg: #ffffff;
-      --input-fg: #111111;
-      --muted: rgba(0,0,0,0.75);
-      --btn-bg: #111111;
-      --btn-fg: #ffffff;
-      --btn-border: #111111;
-      --error: #b00020;
+      --bg:#ffffff; --fg:#111111; --card:#f6f7f9; --border:#c8ccd3;
+      --input-bg:#ffffff; --input-fg:#111111; --muted:rgba(0,0,0,0.75);
+      --btn-bg:#111111; --btn-fg:#ffffff; --btn-border:#111111;
+      --error:#b00020;
     }
 
-    /* Dark theme (high contrast) */
     html[data-theme="dark"]{
-      --bg: #0b0d10;
-      --fg: #ffffff;
-      --card: #121620;
-      --border: rgba(255,255,255,0.20);
-      --input-bg: #0f131b;
-      --input-fg: #ffffff;
-      --muted: rgba(255,255,255,0.80);
-      --btn-bg: #ffffff;
-      --btn-fg: #111111;
-      --btn-border: #ffffff;
-      --error: #ff6b6b;
+      --bg:#0b0d10; --fg:#ffffff; --card:#121620; --border:rgba(255,255,255,0.20);
+      --input-bg:#0f131b; --input-fg:#ffffff; --muted:rgba(255,255,255,0.80);
+      --btn-bg:#ffffff; --btn-fg:#111111; --btn-border:#ffffff;
+      --error:#ff6b6b;
     }
 
     h1{ font-size:1.2rem; margin:0; }
@@ -98,6 +82,7 @@
       gap:12px;
       align-items:end;
     }
+
     .row2{
       display:grid;
       grid-template-columns: 1fr 0.35fr;
@@ -105,9 +90,11 @@
       align-items:end;
       margin-top:12px;
     }
-    .rowDate{
+
+    /* Simplified date UI: text range + multi-day picker */
+    .rowDateSimple{
       display:grid;
-      grid-template-columns: 1fr 1fr 0.35fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap:12px;
       align-items:end;
       margin-top:12px;
@@ -116,12 +103,12 @@
     @media (max-width: 900px){
       .grid3{ grid-template-columns:1fr; }
       .row2{ grid-template-columns:1fr; }
-      .rowDate{ grid-template-columns:1fr; }
+      .rowDateSimple{ grid-template-columns:1fr; }
       .topbar{ flex-direction: column; align-items: stretch; }
       .themeBtn{ width: 100%; }
     }
 
-    .muted{ opacity:1; color: var(--muted); font-size:.95rem; margin-top:6px; }
+    .muted{ color: var(--muted); font-size:.95rem; margin-top:6px; }
     .status{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       white-space: pre-wrap;
@@ -135,6 +122,35 @@
       margin-top: 8px;
       white-space: pre-wrap;
       font-size: .95rem;
+    }
+
+    .pillRow{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:8px;
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:6px 10px;
+      background: var(--input-bg);
+      color: var(--input-fg);
+      font-size: .9rem;
+      user-select:none;
+    }
+    .pill button{
+      width:auto;
+      padding:0 6px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background: transparent;
+      color: inherit;
+      cursor:pointer;
+      font-weight:700;
     }
 
     /* Desktop: two columns (moist left, temp right) */
@@ -201,25 +217,28 @@
       </div>
     </div>
 
-    <!-- Date range controls -->
-    <div class="rowDate">
+    <!-- Simplified date interface -->
+    <div class="rowDateSimple">
       <div>
-        <label for="startDate">Start date/time</label>
-        <input id="startDate" type="datetime-local" step="1" />
-        <input id="startDateText" placeholder="Or type: YYYY-MM-DD HH:MM[:SS]" />
+        <label for="startText">Start (text)</label>
+        <input id="startText" placeholder="YYYY-MM-DD HH:MM[:SS]" />
       </div>
-
       <div>
-        <label for="endDate">End date/time</label>
-        <input id="endDate" type="datetime-local" step="1" />
-        <input id="endDateText" placeholder="Or type: YYYY-MM-DD HH:MM[:SS]" />
+        <label for="endText">End (text)</label>
+        <input id="endText" placeholder="YYYY-MM-DD HH:MM[:SS]" />
       </div>
-
       <div>
-        <label>&nbsp;</label>
-        <button id="applyDateBtn" type="button">Apply Date Range</button>
+        <label for="dayPicker">Pick day(s) (GUI)</label>
+        <input id="dayPicker" type="date" />
         <div class="muted" id="validRangeText"></div>
       </div>
+    </div>
+
+    <div class="pillRow" id="selectedDaysRow" aria-label="Selected days"></div>
+    <div class="muted">
+      Day selection is <b>OR</b> with the text range:
+      if you pick any days, the charts show only data whose <b>created_at</b> date matches those days.
+      Clear selected days to use the text range again.
     </div>
 
     <div class="errorText" id="dateError"></div>
@@ -266,12 +285,11 @@
     const elTempCol   = document.getElementById("tempCol");
     const elZipperCol = document.getElementById("zipperCol");
 
-    // Date UI
-    const elStartDate = document.getElementById("startDate");
-    const elEndDate   = document.getElementById("endDate");
-    const elStartDateText = document.getElementById("startDateText");
-    const elEndDateText   = document.getElementById("endDateText");
-    const elApplyDateBtn  = document.getElementById("applyDateBtn");
+    // Date UI (simplified)
+    const elStartText = document.getElementById("startText");
+    const elEndText   = document.getElementById("endText");
+    const elDayPicker = document.getElementById("dayPicker");
+    const elSelectedDaysRow = document.getElementById("selectedDaysRow");
     const elValidRangeText = document.getElementById("validRangeText");
     const elDateError = document.getElementById("dateError");
 
@@ -280,18 +298,20 @@
     let moistCards  = new Array(8).fill(null);
     let tempCards   = new Array(8).fill(null);
 
-    // Keep last fetched feeds so date changes don't refetch.
+    // Cached fetch
     let lastFeeds = [];
-    let lastSensors = [];
     let currentSensorName = null;
 
-    // Computed from lastFeeds (global across sensors)
+    // Global min/max from fetched data
     let dataMinMs = null;
     let dataMaxMs = null;
 
-    // Active user-selected range (ms). null means "no filter".
+    // Active filter state
     let activeStartMs = null;
     let activeEndMs   = null;
+
+    // Multi-day selection: store as YYYY-MM-DD strings (local date)
+    const selectedDays = new Set();
 
     function setStatus(msg){ elStatus.textContent = msg; }
     function setDateError(msg){ elDateError.textContent = msg || ""; }
@@ -385,88 +405,64 @@
       return d.toLocaleString();
     }
 
-    // ---- Date range parsing/validation ----
-    // datetime-local values are local time with no TZ info; convert to ms in local time.
-    function datetimeLocalToMs(v){
-      // v: "YYYY-MM-DDTHH:MM" or "YYYY-MM-DDTHH:MM:SS"
-      if (!v || typeof v !== "string") return null;
-      const ms = new Date(v).getTime();
-      return Number.isFinite(ms) ? ms : null;
+    // Convert ms to local YYYY-MM-DD
+    function msToLocalDay(ms){
+      const d = new Date(ms);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
     }
 
-    // Accepts "YYYY-MM-DD HH:MM[:SS]" or ISO-ish "YYYY-MM-DDTHH:MM[:SS]"
+    // ---- Text range parsing/validation ----
+    // Accepts "YYYY-MM-DD HH:MM[:SS]" or "YYYY-MM-DDTHH:MM[:SS]"
     function parseTypedDateToMs(s){
       if (!s || typeof s !== "string") return null;
       const t = s.trim();
       if (!t) return null;
-
       const normalized = t.includes("T") ? t : t.replace(" ", "T");
       const ms = new Date(normalized).getTime();
       return Number.isFinite(ms) ? ms : null;
     }
 
-    function msToDatetimeLocal(ms){
-      const d = new Date(ms);
-      if (Number.isNaN(d.getTime())) return "";
-      const pad = (n) => String(n).padStart(2, "0");
-      const yyyy = d.getFullYear();
-      const mm = pad(d.getMonth() + 1);
-      const dd = pad(d.getDate());
-      const hh = pad(d.getHours());
-      const mi = pad(d.getMinutes());
-      const ss = pad(d.getSeconds());
-      return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`;
+    function computeGlobalMinMaxMs(feeds){
+      let min = Infinity;
+      let max = -Infinity;
+      for (const f of feeds){
+        const ms = parseCreatedAtToMs(f?.created_at);
+        if (!Number.isFinite(ms)) continue;
+        if (ms < min) min = ms;
+        if (ms > max) max = ms;
+      }
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min === Infinity || max === -Infinity) {
+        return { minMs: null, maxMs: null };
+      }
+      return { minMs: min, maxMs: max };
     }
 
     function updateValidRangeUI(){
       if (!Number.isFinite(dataMinMs) || !Number.isFinite(dataMaxMs)) {
         elValidRangeText.textContent = "";
-        elStartDate.min = "";
-        elStartDate.max = "";
-        elEndDate.min = "";
-        elEndDate.max = "";
+        elDayPicker.min = "";
+        elDayPicker.max = "";
         return;
       }
-
       const minStr = new Date(dataMinMs).toLocaleString();
       const maxStr = new Date(dataMaxMs).toLocaleString();
-      elValidRangeText.textContent = `Valid range: ${minStr} → ${maxStr}`;
+      elValidRangeText.textContent = `Valid: ${minStr} → ${maxStr}`;
 
-      // Set min/max on datetime-local pickers
-      const minLocal = msToDatetimeLocal(dataMinMs);
-      const maxLocal = msToDatetimeLocal(dataMaxMs);
-      elStartDate.min = minLocal;
-      elStartDate.max = maxLocal;
-      elEndDate.min = minLocal;
-      elEndDate.max = maxLocal;
+      // dayPicker limits (YYYY-MM-DD)
+      elDayPicker.min = msToLocalDay(dataMinMs);
+      elDayPicker.max = msToLocalDay(dataMaxMs);
     }
 
-    function setDefaultDateRangeFromData(){
+    function setDefaultTextRangeFromData(){
       if (!Number.isFinite(dataMinMs) || !Number.isFinite(dataMaxMs)) return;
-      // Default: full range
       activeStartMs = dataMinMs;
-      activeEndMs = dataMaxMs;
-
-      elStartDate.value = msToDatetimeLocal(activeStartMs);
-      elEndDate.value   = msToDatetimeLocal(activeEndMs);
-
-      // Mirror into text boxes
-      elStartDateText.value = new Date(activeStartMs).toLocaleString();
-      elEndDateText.value   = new Date(activeEndMs).toLocaleString();
+      activeEndMs   = dataMaxMs;
+      elStartText.value = new Date(activeStartMs).toLocaleString();
+      elEndText.value   = new Date(activeEndMs).toLocaleString();
     }
 
-    function readDateRangeFromInputs(){
-      // Prefer GUI inputs if present; fall back to typed inputs.
-      let startMs = datetimeLocalToMs(elStartDate.value);
-      let endMs   = datetimeLocalToMs(elEndDate.value);
-
-      if (!Number.isFinite(startMs)) startMs = parseTypedDateToMs(elStartDateText.value);
-      if (!Number.isFinite(endMs))   endMs   = parseTypedDateToMs(elEndDateText.value);
-
-      return { startMs, endMs };
-    }
-
-    function validateAndApplyDateRange(){
+    function validateAndApplyTextRange(){
       setDateError("");
 
       if (!Number.isFinite(dataMinMs) || !Number.isFinite(dataMaxMs)) {
@@ -474,41 +470,83 @@
         return false;
       }
 
-      const { startMs, endMs } = readDateRangeFromInputs();
+      const startMs = parseTypedDateToMs(elStartText.value);
+      const endMs   = parseTypedDateToMs(elEndText.value);
 
       if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
-        setDateError("Invalid date/time. Use the picker or type like: 2026-01-07 10:43:12");
+        setDateError("Invalid start/end. Use: 2026-01-07 10:43:12 (or 2026-01-07T10:43:12)");
         return false;
       }
-
       if (startMs > endMs) {
         setDateError("Start must be earlier than (or equal to) End.");
         return false;
       }
-
       if (startMs < dataMinMs || endMs > dataMaxMs) {
-        const minStr = new Date(dataMinMs).toLocaleString();
-        const maxStr = new Date(dataMaxMs).toLocaleString();
-        setDateError(`Out of range. Choose between:\n${minStr}\n${maxStr}`);
+        setDateError(
+          `Out of range. Choose between:\n${new Date(dataMinMs).toLocaleString()}\n${new Date(dataMaxMs).toLocaleString()}`
+        );
         return false;
       }
 
       activeStartMs = startMs;
       activeEndMs   = endMs;
 
-      // Normalize GUI inputs to exact parsed values
-      elStartDate.value = msToDatetimeLocal(activeStartMs);
-      elEndDate.value   = msToDatetimeLocal(activeEndMs);
+      // When text range is applied, clear selected days (so it's unambiguous)
+      selectedDays.clear();
+      renderSelectedDays();
 
-      // Keep typed boxes in sync (human-readable)
-      elStartDateText.value = new Date(activeStartMs).toLocaleString();
-      elEndDateText.value   = new Date(activeEndMs).toLocaleString();
+      rerenderAll();
+      return true;
+    }
 
-      // Re-render all charts
-      if (currentSensorName && Array.isArray(lastFeeds) && lastFeeds.length) {
-        const rows = buildRowsForSensor(lastFeeds, currentSensorName);
-        renderSensor(rows, currentSensorName);
+    // ---- Multi-day GUI selection ----
+    function renderSelectedDays(){
+      elSelectedDaysRow.innerHTML = "";
+      const days = Array.from(selectedDays).sort();
+
+      if (days.length === 0) return;
+
+      for (const day of days){
+        const pill = document.createElement("div");
+        pill.className = "pill";
+        const span = document.createElement("span");
+        span.textContent = day;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "×";
+        btn.title = "Remove day";
+        btn.addEventListener("click", () => {
+          selectedDays.delete(day);
+          renderSelectedDays();
+          rerenderAll();
+        });
+        pill.appendChild(span);
+        pill.appendChild(btn);
+        elSelectedDaysRow.appendChild(pill);
       }
+    }
+
+    function validateDayWithinRange(dayStr){
+      if (!Number.isFinite(dataMinMs) || !Number.isFinite(dataMaxMs)) return false;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dayStr)) return false;
+      const minDay = msToLocalDay(dataMinMs);
+      const maxDay = msToLocalDay(dataMaxMs);
+      return (dayStr >= minDay && dayStr <= maxDay);
+    }
+
+    function addSelectedDay(dayStr){
+      setDateError("");
+
+      if (!validateDayWithinRange(dayStr)) {
+        setDateError(`Day is out of range. Choose between ${msToLocalDay(dataMinMs)} and ${msToLocalDay(dataMaxMs)}.`);
+        return false;
+      }
+
+      // If user is using days, we ignore text range.
+      // Clear text range state but keep values in boxes (so user can return to it).
+      selectedDays.add(dayStr);
+      renderSelectedDays();
+      rerenderAll();
       return true;
     }
 
@@ -644,7 +682,21 @@
       }, 150));
     }
 
-    // ---- Data parse / render (created_at for x + point labeling) ----
+    // ---- Filtering logic ----
+    function passesFilter(ms){
+      // If any days selected, filter by day-of-created_at (local)
+      if (selectedDays.size > 0) {
+        const day = msToLocalDay(ms);
+        return selectedDays.has(day);
+      }
+
+      // Otherwise, use the text range
+      if (Number.isFinite(activeStartMs) && ms < activeStartMs) return false;
+      if (Number.isFinite(activeEndMs) && ms > activeEndMs) return false;
+      return true;
+    }
+
+    // ---- Data parse / render ----
     function buildRowsForSensor(feeds, sensorName){
       const rows = feeds
         .filter(f => (f?.field1 || "").trim() === sensorName)
@@ -653,9 +705,7 @@
           const ms = parseCreatedAtToMs(createdAt);
           if (!Number.isFinite(ms)) return null;
 
-          // Apply global date filter (if set)
-          if (Number.isFinite(activeStartMs) && ms < activeStartMs) return null;
-          if (Number.isFinite(activeEndMs) && ms > activeEndMs) return null;
+          if (!passesFilter(ms)) return null;
 
           const moist = parseFieldSeries(f.field3);
           const temp  = parseFieldSeries(f.field4);
@@ -714,35 +764,27 @@
 
       const earliest = rows.length ? rows[0].created_at_label : "n/a";
       const latest = rows.length ? rows[rows.length - 1].created_at_label : "n/a";
-      const filterInfo = (Number.isFinite(activeStartMs) && Number.isFinite(activeEndMs))
-        ? `Filter: ${new Date(activeStartMs).toLocaleString()} → ${new Date(activeEndMs).toLocaleString()}`
-        : "Filter: (none)";
+
+      const filterInfo = (selectedDays.size > 0)
+        ? `Days: ${Array.from(selectedDays).sort().join(", ")}`
+        : `Range: ${new Date(activeStartMs).toLocaleString()} → ${new Date(activeEndMs).toLocaleString()}`;
 
       setStatus((prev => {
         const header = (prev || "").split("\n")[0] || "";
         const headerLine = header.startsWith("Loaded") ? header + "\n" : "";
         return headerLine +
           `Showing sensor: ${sensorName}\n` +
-          `Usable rows (parsed + in range): ${rows.length}\n` +
+          `Usable rows (in view): ${rows.length}\n` +
           `Earliest in view: ${earliest}\n` +
           `Latest in view: ${latest}\n` +
-          `${filterInfo}`;
+          `Filter: ${filterInfo}`;
       })(elStatus.textContent));
     }
 
-    function computeGlobalMinMaxMs(feeds){
-      let min = Infinity;
-      let max = -Infinity;
-      for (const f of feeds){
-        const ms = parseCreatedAtToMs(f?.created_at);
-        if (!Number.isFinite(ms)) continue;
-        if (ms < min) min = ms;
-        if (ms > max) max = ms;
-      }
-      if (!Number.isFinite(min) || !Number.isFinite(max) || min === Infinity || max === -Infinity) {
-        return { minMs: null, maxMs: null };
-      }
-      return { minMs: min, maxMs: max };
+    function rerenderAll(){
+      if (!currentSensorName || !Array.isArray(lastFeeds) || lastFeeds.length === 0) return;
+      const rows = buildRowsForSensor(lastFeeds, currentSensorName);
+      renderSensor(rows, currentSensorName);
     }
 
     async function loadAndRender(){
@@ -778,21 +820,20 @@
 
       lastFeeds = feeds;
 
-      // Global valid range (across everything fetched)
       const mm = computeGlobalMinMaxMs(feeds);
       dataMinMs = mm.minMs;
       dataMaxMs = mm.maxMs;
       updateValidRangeUI();
 
-      // If this is the first load (or date range invalid), reset filter to full range.
+      // If first load, default the range to full (and no days selected)
       if (!Number.isFinite(activeStartMs) || !Number.isFinite(activeEndMs) ||
           activeStartMs < dataMinMs || activeEndMs > dataMaxMs) {
-        setDefaultDateRangeFromData();
+        selectedDays.clear();
+        renderSelectedDays();
+        setDefaultTextRangeFromData();
       }
 
       const sensors = uniqueSensors(feeds);
-      lastSensors = sensors;
-
       if (sensors.length === 0){
         setStatus(`No sensors found in field1.\nURL: ${url}`);
         elSensorSel.innerHTML = `<option>No sensors found</option>`;
@@ -824,7 +865,7 @@
       setStatus(
         `Loaded ${feeds.length} rows from channel ${channelId}${chName}.\n` +
         `Discovered ${sensors.length} sensor(s). Showing: ${defaultSensor}\n` +
-        `Usable rows (parsed + in range): ${rows.length}`
+        `Usable rows (in view): ${rows.length}`
       );
     }
 
@@ -857,30 +898,99 @@
     elReadKey.addEventListener("change", () => saveReadKey(elReadKey.value));
     elReadKey.addEventListener("blur", () => saveReadKey(elReadKey.value));
 
-    // Date UI wiring
-    elApplyDateBtn.addEventListener("click", () => validateAndApplyDateRange());
+    // ---- Date UI events ----
+    // Text range: apply on Enter or when leaving field
+    elStartText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyTextRange(); });
+    elEndText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyTextRange(); });
+    elStartText.addEventListener("blur", () => { if (elStartText.value.trim() || elEndText.value.trim()) validateAndApplyTextRange(); });
+    elEndText.addEventListener("blur", () => { if (elStartText.value.trim() || elEndText.value.trim()) validateAndApplyTextRange(); });
 
-    // If user types in the text boxes, pressing Enter applies
-    elStartDateText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyDateRange(); });
-    elEndDateText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyDateRange(); });
+    // Day picker: each selection adds a day to the set (multi-select behavior)
+    elDayPicker.addEventListener("change", () => {
+      const day = elDayPicker.value; // YYYY-MM-DD
+      if (!day) return;
+      addSelectedDay(day);
+      elDayPicker.value = ""; // allow re-selecting quickly
+    });
 
-    // If user changes the GUI pickers, auto-apply (validated)
-    elStartDate.addEventListener("change", () => validateAndApplyDateRange());
-    elEndDate.addEventListener("change", () => validateAndApplyDateRange());
+    // ---- Layout ----
+    function isMobile(){ return window.matchMedia("(max-width: 900px)").matches; }
+    function clearContainers(){
+      elMoistCol.innerHTML  = "";
+      elTempCol.innerHTML   = "";
+      elZipperCol.innerHTML = "";
+    }
+    function placeCardsForViewport(){
+      clearContainers();
+      if (isMobile()){
+        for (let i = 0; i < 8; i++){
+          elZipperCol.appendChild(moistCards[i]);
+          elZipperCol.appendChild(tempCards[i]);
+        }
+      } else {
+        for (let i = 0; i < 8; i++){
+          elMoistCol.appendChild(moistCards[i]);
+          elTempCol.appendChild(tempCards[i]);
+        }
+      }
+    }
+    function debounce(fn, wait){
+      let t = null;
+      return (...args) => {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => fn(...args), wait);
+      };
+    }
+
+    // ---- Chart cards ----
+    function makeChartCard(titleText){
+      const card = document.createElement("div");
+      card.className = "card chartCard";
+      const h = document.createElement("h3");
+      h.textContent = titleText;
+      const canvas = document.createElement("canvas");
+      card.appendChild(h);
+      card.appendChild(canvas);
+      return { card, canvas };
+    }
+
+    // ---- Build cards & charts ----
+    function destroyAllCharts(){
+      for (const c of moistCharts) c?.destroy?.();
+      for (const c of tempCharts)  c?.destroy?.();
+      moistCharts = new Array(8).fill(null);
+      tempCharts  = new Array(8).fill(null);
+      moistCards  = new Array(8).fill(null);
+      tempCards   = new Array(8).fill(null);
+      clearContainers();
+    }
+
+    function buildCardsAndChartsOnce(){
+      for (let i = 0; i < 8; i++){
+        const m = makeChartCard(`Moisture ${depthLabel(i)}`);
+        moistCards[i]  = m.card;
+        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (units per your sensor)");
+
+        const t = makeChartCard(`Temperature ${depthLabel(i)}`);
+        tempCards[i]  = t.card;
+        tempCharts[i] = makeDepthChart(t.canvas, "Temperature (°C)");
+      }
+      placeCardsForViewport();
+
+      window.addEventListener("resize", debounce(() => {
+        placeCardsForViewport();
+        for (const c of [...moistCharts, ...tempCharts]) c?.resize?.();
+      }, 150));
+    }
 
     // ---- Init ----
     setTheme(getInitialTheme());
     loadSavedReadKey();
     elThemeBtn.addEventListener("click", toggleTheme);
     elLoadBtn.addEventListener("click", loadAndRender);
+
+    // Initial load
     loadAndRender();
   </script>
-
-  <!--
-    Run locally:
-      1) Save as index.html
-      2) python3 -m http.server 8000
-      3) Open http://localhost:8000
-  -->
 </body>
 </html>
