@@ -244,6 +244,7 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
   uint8_t recvd = 0;
 
   for (int i = 0; i < NUM_WORKERS; i++) {
+    delay(30000);  // avoid Thingspeak rate limiting
     start = millis();
 
     const String QUERY    = String(WORKERS[i]) + "q";
@@ -267,7 +268,6 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
         }
       }
     }
-    delay(15000);  // avoid Thingspeak rate limiting
   }
   return recvd;
 }
