@@ -296,7 +296,7 @@
         <select id="sensorSelect" disabled>
           <option>Load data first…</option>
         </select>
-        <div class="muted help">Hover a point to see its <b>created_at</b> timestamp.</div>
+        <div class="muted help">Hover a point to see its timestamp.</div>
       </div>
     </div>
 
@@ -740,7 +740,7 @@
           scales: {
             x: {
               type: "linear",
-              title: { display: true, text: "Time (created_at)", color: textColor },
+              title: { display: true, text: "Time", color: textColor },
               ticks: { color: textColor, callback: (val) => formatEpochTick(val) },
               grid: { color: gridColor }
             },

@@ -94,7 +94,8 @@ void setup() {
     J *req = notecard.newRequest("hub.set");
     if (req != NULL) {
       JAddStringToObject(req, "product", productUID);
-      JAddStringToObject(req, "mode", "continuous");
+      // JAddStringToObject(req, "mode", "continuous"); 
+      JAddStringToObject(req, "mode", "minimum "); 
       notecard.sendRequest(req);
     }
   }
@@ -450,6 +451,7 @@ String sendCommand(String command) {
 
 
 void uploadNote(String device, String moist, String temp){
+  {
     J *req = notecard.newRequest("note.add");
     if (req != NULL) {
       JAddStringToObject(req, "file", "sensors.qo");
@@ -462,6 +464,19 @@ void uploadNote(String device, String moist, String temp){
       }
       notecard.sendRequest(req);
     }
+    else {
+      Serial.println("Error creating data request for " + device);
+    }
+  }
+  {
+    J *req = notecard.newRequest("hub.sync");
+    if (req != NULL){
+      notecard.sendRequest(req);
+    }
+    else {
+      Serial.println("Error creating sync request for " + device);
+    }
+  }
 }
 
 
