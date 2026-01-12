@@ -94,8 +94,9 @@ void setup() {
     J *req = notecard.newRequest("hub.set");
     if (req != NULL) {
       JAddStringToObject(req, "product", productUID);
-      // JAddStringToObject(req, "mode", "continuous"); 
-      JAddStringToObject(req, "mode", "minimum "); 
+      // JAddStringToObject(req, "mode", "continuous");  // too power hungry?
+      JAddStringToObject(req, "mode", "minimum"); 
+      JAddNumberToObject(req, "outbound", 1);
       notecard.sendRequest(req);
     }
   }
@@ -262,9 +263,7 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
           
           ParsedMessage pm = parseMessage(line);
           uploadNote(pm.header, pm.moist, pm.temp);
-
-          break;  // TODO: figure out why sometimes I get two responses from the same device. 
-          // Maybe it's getting relayed from a different device. 
+          break;  
         }
       }
     }
@@ -468,15 +467,15 @@ void uploadNote(String device, String moist, String temp){
       Serial.println("Error creating data request for " + device);
     }
   }
-  {
-    J *req = notecard.newRequest("hub.sync");
-    if (req != NULL){
-      notecard.sendRequest(req);
-    }
-    else {
-      Serial.println("Error creating sync request for " + device);
-    }
-  }
+  // {  // unneccesary sync?
+  //   J *req = notecard.newRequest("hub.sync");
+  //   if (req != NULL){
+  //     notecard.sendRequest(req);
+  //   }
+  //   else {
+  //     Serial.println("Error creating sync request for " + device);
+  //   }
+  // }
 }
 
 
