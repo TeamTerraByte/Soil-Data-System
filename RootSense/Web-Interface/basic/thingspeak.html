@@ -60,7 +60,6 @@
   .status { margin-top: 10px; font-size: 13px; color: var(--muted); }
   .status.ok { color: var(--ok); }
   .status.err { color: var(--err); }
-
   .table-wrap {
     margin-top: 18px; overflow: auto; border: 1px solid var(--border);
     border-radius: 12px; background: #0b1224;
@@ -85,7 +84,6 @@
   <div class="container">
     <h1>ThingSpeak Viewer</h1>
     <p class="caption">Static page: enter <strong>Channel ID</strong> and <strong>Read API Key</strong>, then fetch recent feeds. No libraries required.</p>
-
     <div class="card" role="region" aria-label="Query form">
       <div class="row">
         <div class="col-3">
@@ -106,7 +104,6 @@
           <div class="check"><input id="includeStatus" type="checkbox" /> include channel status</div>
         </div>
       </div>
-
       <div class="row" style="margin-top:12px">
         <div class="col-6 actions">
           <button id="btnFetch">Fetch</button>
@@ -118,9 +115,7 @@
         </div>
       </div>
     </div>
-
     <div id="meta" class="small" style="margin:10px 2px 4px;"></div>
-
     <div class="table-wrap" role="region" aria-label="Results table">
       <table id="table">
         <thead><tr id="thead"></tr></thead>
@@ -128,9 +123,25 @@
       </table>
     </div>
   </div>
-
 <script>
 const BASE = "https://api.thingspeak.com/channels/{id}/feeds.json";
+
+const CHICAGO_TZ = "America/Chicago";
+const chicagoFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: CHICAGO_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+function formatChicago(iso) {
+  const t = Date.parse(iso);
+  if (!iso || Number.isNaN(t)) return iso || "";
+  return chicagoFmt.format(new Date(t));
+}
 
 const els = {
   channelId: document.getElementById("channelId"),
@@ -155,14 +166,16 @@ function setStatus(msg, kind = "") {
   els.status.textContent = msg || "";
   els.status.className = "status" + (kind ? " " + kind : "");
 }
+
 function setMeta(channel) {
   if (!channel || !Object.keys(channel).length) { els.meta.textContent = ""; return; }
   const name = channel.name || "(unnamed)";
   const id = channel.id || "";
   const fields = Array.from({length: 8}, (_,i)=> channel["field"+(i+1)]).filter(Boolean);
-  const updated = channel.updated_at ? new Date(channel.updated_at).toISOString() : "";
+  const updated = channel.updated_at ? formatChicago(channel.updated_at) : "";
   els.meta.innerHTML = `<span class="small">Channel <strong>#${id}</strong>: <strong>${escapeHtml(name)}</strong> — ${fields.length} field(s) — updated ${escapeHtml(updated)}</span>`;
 }
+
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, m => ({
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
@@ -186,8 +199,10 @@ async function fetchFeeds() {
       results: String(results),
       ...(includeLoc ? { location: "true" } : {})
     }).toString();
+
     const resp = await fetch(url, { headers: { "Accept": "application/json" } });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+
     const data = await resp.json();
     buildTable(data, { includeLoc, includeStatus });
     setStatus(`Loaded ${curRows.length} row(s).`, "ok");
@@ -207,13 +222,15 @@ function buildTable(data, opts) {
   // Derive columns from channel field names (field1..field8)
   const cols = [];
   cols.push({ key: "entry_id", label: "Entry ID" });
-  cols.push({ key: "created_at", label: "Created (UTC)" });
+  cols.push({ key: "created_at", label: "Created (Chicago)" });
+
   for (let i = 1; i <= 8; i++) {
     const key = "field" + i;
     if (channel[key] || feeds.some(f => f[key] != null)) {
       cols.push({ key, label: channel[key] ? `${channel[key]} (field${i})` : `field${i}` });
     }
   }
+
   if (opts.includeLoc) {
     cols.push({ key: "latitude", label: "Latitude" });
     cols.push({ key: "longitude", label: "Longitude" });
@@ -222,6 +239,7 @@ function buildTable(data, opts) {
   if (opts.includeStatus) {
     cols.push({ key: "status", label: "Status" });
   }
+
   curCols = cols;
 
   // Render header
@@ -240,7 +258,9 @@ function buildTable(data, opts) {
   // Prepare rows
   curRows = feeds.map(f => ({
     ...f,
-    created_at: f.created_at || "",
+    // keep raw UTC ISO for sorting and export if needed
+    created_at_raw: f.created_at || "",
+    created_at: f.created_at ? formatChicago(f.created_at) : "",
     entry_id: f.entry_id ?? "",
   }));
 
@@ -282,7 +302,14 @@ function sortBy(key, initial = false) {
   }
   const dir = sortState.dir;
   const rows = [...curRows];
-  rows.sort((a, b) => cmp(a[key], b[key]) * dir);
+
+  rows.sort((a, b) => {
+    if (key === "created_at") {
+      return (Date.parse(a.created_at_raw) - Date.parse(b.created_at_raw)) * dir;
+    }
+    return cmp(a[key], b[key]) * dir;
+  });
+
   renderBody(rows);
 }
 
@@ -318,6 +345,7 @@ function exportCsv() {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
 function safeCsv(v) {
   const s = String(v ?? "");
   if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
