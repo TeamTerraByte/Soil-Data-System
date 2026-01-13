@@ -162,6 +162,30 @@ let curRows = [];
 let curCols = [];
 let sortState = { key: null, dir: 1 };
 
+// Load saved values from localStorage on page load
+function loadFromStorage() {
+  try {
+    const savedChannelId = localStorage.getItem("thingspeak_channel_id");
+    const savedApiKey = localStorage.getItem("thingspeak_api_key");
+    if (savedChannelId) els.channelId.value = savedChannelId;
+    if (savedApiKey) els.apiKey.value = savedApiKey;
+  } catch (err) {
+    console.warn("localStorage read failed:", err);
+  }
+}
+
+// Save values to localStorage
+function saveToStorage() {
+  try {
+    const id = els.channelId.value.trim();
+    const key = els.apiKey.value.trim();
+    if (id) localStorage.setItem("thingspeak_channel_id", id);
+    if (key) localStorage.setItem("thingspeak_api_key", key);
+  } catch (err) {
+    console.warn("localStorage write failed:", err);
+  }
+}
+
 function setStatus(msg, kind = "") {
   els.status.textContent = msg || "";
   els.status.className = "status" + (kind ? " " + kind : "");
@@ -191,6 +215,9 @@ async function fetchFeeds() {
 
   if (!/^[0-9]+$/.test(id)) { setStatus("Channel ID must be a positive integer.", "err"); return; }
   if (!key) { setStatus("Read API key is required.", "err"); return; }
+
+  // Save to localStorage before fetching
+  saveToStorage();
 
   els.btnFetch.disabled = true; setStatus("Fetching…");
   try {
@@ -362,11 +389,18 @@ els.btnFetch.addEventListener("click", fetchFeeds);
 els.btnExport.addEventListener("click", exportCsv);
 els.btnClear.addEventListener("click", clearTable);
 
+// Save to localStorage when inputs change
+els.channelId.addEventListener("input", saveToStorage);
+els.apiKey.addEventListener("input", saveToStorage);
+
 [els.channelId, els.apiKey, els.results].forEach(el => {
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter") fetchFeeds();
   });
 });
+
+// Load saved values when page loads
+loadFromStorage();
 </script>
 </body>
 </html>
