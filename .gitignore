@@ -1,2 +1,4 @@
 secrets.h
 .psk
+psk-secret.txt
+*-info.txt

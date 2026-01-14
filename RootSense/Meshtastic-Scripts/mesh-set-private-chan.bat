@@ -1,21 +1,32 @@
-meshtastic --info
-# meshtastic --port COM5 --info        # Set COM port if necessary
+@echo on
+setlocal
 
-# --- Encrypted primary channel ---
-meshtastic --ch-set psk random --ch-index 0
+meshtastic --info
+@REM meshtastic --port COM14 --info        # Set COM port if necessary
+
+@REM --- Read PSK from file ---
+set /p PSK=<psk-secret.txt
+
+@REM --- Encrypted primary channel --- (use random to generate PSK)
+@REM meshtastic --ch-set psk random --ch-index 0 
+meshtastic --ch-set psk %PSK% --ch-index 0
 meshtastic --ch-set name "private-uart" --ch-index 0
 
-# --- Serial module configuration ---
+@REM --- Serial module configuration ---
 meshtastic --set serial.enabled true
-meshtastic --set serial.mode TEXTMSG
+@REM Setting TEXTMSG mode seems to fail often
+meshtastic --set serial.mode TEXTMSG  
 meshtastic --set serial.baud 38400
 
-# --- UART pins (Heltec ESP32 V3 safe pins) ---
+@REM --- UART pins (as provided) ---
 meshtastic --set serial.txd 43
+@REM setting RXD seems to fail often
 meshtastic --set serial.rxd 44
 
-# --- Optional debugging ---
+@REM --- Optional debugging ---
 meshtastic --set serial.echo true
 
-# --- Apply settings ---
+@REM --- Apply settings ---
 meshtastic --reboot
+
+endlocal
