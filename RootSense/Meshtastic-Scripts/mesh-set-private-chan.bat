@@ -11,8 +11,8 @@ meshtastic --set serial.mode TEXTMSG
 meshtastic --set serial.baud 38400
 
 # --- UART pins (Heltec ESP32 V3 safe pins) ---
-meshtastic --set serial.txd 17
-meshtastic --set serial.rxd 16
+meshtastic --set serial.txd 43
+meshtastic --set serial.rxd 44
 
 # --- Optional debugging ---
 meshtastic --set serial.echo true
