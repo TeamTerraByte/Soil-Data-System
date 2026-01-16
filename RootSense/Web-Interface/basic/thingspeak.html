@@ -60,18 +60,38 @@
   .status { margin-top: 10px; font-size: 13px; color: var(--muted); }
   .status.ok { color: var(--ok); }
   .status.err { color: var(--err); }
+
+  /* Horizontal scrolling improvements */
   .table-wrap {
-    margin-top: 18px; overflow: auto; border: 1px solid var(--border);
-    border-radius: 12px; background: #0b1224;
+    margin-top: 18px;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable both-edges;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #0b1224;
   }
-  table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 720px; }
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+    /* Let the table grow wider than the container so horizontal scrolling works */
+    width: max-content;
+    min-width: max(720px, 100%);
+  }
   thead th {
     position: sticky; top: 0; background: #0e162e; color: #cbd5e1;
+    white-space: nowrap;
     padding: 10px 12px; font-size: 13px; text-align: left; border-bottom: 1px solid var(--border);
     user-select: none; cursor: pointer;
   }
   thead th .hint { color: var(--muted); font-weight: 500; font-size: 12px; margin-left: 8px; }
-  tbody td { padding: 8px 12px; border-bottom: 1px solid #0e1a39; font-size: 13px; }
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #0e1a39;
+    font-size: 13px;
+    white-space: nowrap;
+  }
   tbody tr:nth-child(even) td { background: #0c142b; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
   .pill.ok { background: rgba(16,185,129,.15); color: var(--ok); border: 1px solid rgba(16,185,129,.3); }
@@ -253,6 +273,9 @@ function buildTable(data, opts) {
 
   for (let i = 1; i <= 8; i++) {
     const key = "field" + i;
+    const fieldName = String(channel[key] ?? "").trim();
+    if (/^time\s+since\s+epoch$/i.test(fieldName)) continue;
+
     if (channel[key] || feeds.some(f => f[key] != null)) {
       cols.push({ key, label: channel[key] ? `${channel[key]} (field${i})` : `field${i}` });
     }
@@ -304,6 +327,14 @@ function renderBody(rows) {
       const td = document.createElement("td");
       let val = row[col.key];
       if (val == null) val = "";
+
+      // Replace entire device value if it CONTAINS w{x}r anywhere
+      if (/^device\b/i.test(col.label) && typeof val === "string") {
+        const m = val.match(/w(\d+)r/i); // no \b so it matches inside underscores, etc.
+        const n = m ? parseInt(m[1], 10) : 0;
+        if (n >= 1) val = `worker ${n}`;
+      }
+      
       if (col.key === "status") {
         const span = document.createElement("span");
         const txt = String(val);
