@@ -55,7 +55,7 @@
   button:hover { filter: brightness(1.06); }
   button:active { transform: translateY(1px); }
   button[disabled] { cursor: progress; filter: grayscale(.5) brightness(.8); }
-  .actions { display: flex; gap: 10px; }
+  .actions { display: flex; gap: 10px; align-items: stretch; }
   .actions button.secondary { background: #1f2937; color: var(--text); border-color: var(--border); }
   .status { margin-top: 10px; font-size: 13px; color: var(--muted); }
   .status.ok { color: var(--ok); }
@@ -75,7 +75,6 @@
   table {
     border-collapse: separate;
     border-spacing: 0;
-    /* Let the table grow wider than the container so horizontal scrolling works */
     width: max-content;
     min-width: max(720px, 100%);
   }
@@ -98,12 +97,72 @@
   .pill.err { background: rgba(239,68,68,.15); color: var(--err); border: 1px solid rgba(239,68,68,.3); }
   .small { font-size: 12px; color: var(--muted); }
   .sr { position: absolute; left: -9999px; }
+
+  /* Column picker popover */
+  .actions-wrap { position: relative; width: 100%; }
+  .popover {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    z-index: 50;
+    width: min(520px, calc(100vw - 48px));
+    background: #0b1224;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 36px rgba(0,0,0,.45);
+    padding: 12px;
+    display: none;
+  }
+  .popover.open { display: block; }
+  .popover-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .popover-title { font-weight: 700; }
+  .popover-sub { color: var(--muted); font-size: 12px; }
+  .popover-actions { display: flex; gap: 8px; }
+  .mini {
+    width: auto;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    background: #1f2937;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .col-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+    max-height: 260px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+  .col-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid #0e1a39;
+    border-radius: 12px;
+    background: #0a1022;
+  }
+  .col-item input { transform: translateY(1px); }
+  .col-item .name { font-size: 13px; }
+  .col-item .meta { font-size: 12px; color: var(--muted); }
+  @media (max-width: 720px) {
+    .col-list { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
   <div class="container">
     <h1>ThingSpeak Viewer</h1>
     <p class="caption">Static page: enter <strong>Channel ID</strong> and <strong>Read API Key</strong>, then fetch recent feeds. No libraries required.</p>
+
     <div class="card" role="region" aria-label="Query form">
       <div class="row">
         <div class="col-3">
@@ -124,18 +183,42 @@
           <div class="check"><input id="includeStatus" type="checkbox" /> include channel status</div>
         </div>
       </div>
+
       <div class="row" style="margin-top:12px">
-        <div class="col-6 actions">
-          <button id="btnFetch">Fetch</button>
-          <button id="btnExport" class="secondary" title="Export table to CSV">Export CSV</button>
-          <button id="btnClear" class="secondary" title="Clear table">Clear</button>
+        <div class="col-6">
+          <div class="actions-wrap">
+            <div class="actions">
+              <button id="btnFetch">Fetch</button>
+              <button id="btnColumns" class="secondary" title="Show/hide columns">Columns</button>
+              <button id="btnExport" class="secondary" title="Export visible columns to CSV">Export CSV</button>
+              <button id="btnClear" class="secondary" title="Clear table">Clear</button>
+            </div>
+
+            <div id="colPopover" class="popover" role="dialog" aria-label="Column visibility">
+              <div class="popover-head">
+                <div>
+                  <div class="popover-title">Columns</div>
+                  <div class="popover-sub">Show/hide columns (saved per Channel ID)</div>
+                </div>
+                <div class="popover-actions">
+                  <button id="btnShowAll" class="mini" type="button">Show all</button>
+                  <button id="btnHideAll" class="mini" type="button">Hide all</button>
+                  <button id="btnCloseCols" class="mini" type="button">Close</button>
+                </div>
+              </div>
+              <div id="colList" class="col-list"></div>
+            </div>
+          </div>
         </div>
+
         <div class="col-6">
           <div id="status" class="status" aria-live="polite"></div>
         </div>
       </div>
     </div>
+
     <div id="meta" class="small" style="margin:10px 2px 4px;"></div>
+
     <div class="table-wrap" role="region" aria-label="Results table">
       <table id="table">
         <thead><tr id="thead"></tr></thead>
@@ -143,6 +226,7 @@
       </table>
     </div>
   </div>
+
 <script>
 const BASE = "https://api.thingspeak.com/channels/{id}/feeds.json";
 
@@ -170,6 +254,12 @@ const els = {
   includeLoc: document.getElementById("includeLoc"),
   includeStatus: document.getElementById("includeStatus"),
   btnFetch: document.getElementById("btnFetch"),
+  btnColumns: document.getElementById("btnColumns"),
+  btnShowAll: document.getElementById("btnShowAll"),
+  btnHideAll: document.getElementById("btnHideAll"),
+  btnCloseCols: document.getElementById("btnCloseCols"),
+  colPopover: document.getElementById("colPopover"),
+  colList: document.getElementById("colList"),
   btnExport: document.getElementById("btnExport"),
   btnClear: document.getElementById("btnClear"),
   status: document.getElementById("status"),
@@ -179,8 +269,32 @@ const els = {
 };
 
 let curRows = [];
-let curCols = [];
+let curColsAll = [];       // all possible columns for this dataset
+let visibleColIds = new Set(); // IDs of columns currently visible
 let sortState = { key: null, dir: 1 };
+let curChannelId = "";     // for per-channel persistence
+
+// ---------- localStorage helpers ----------
+function storageKeyForCols(channelId) {
+  const id = String(channelId || "").trim();
+  return id ? `thingspeak_hidden_cols_${id}` : `thingspeak_hidden_cols_default`;
+}
+function loadHiddenCols(channelId) {
+  try {
+    const raw = localStorage.getItem(storageKeyForCols(channelId));
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+function saveHiddenCols(channelId, hiddenSet) {
+  try {
+    localStorage.setItem(storageKeyForCols(channelId), JSON.stringify([...hiddenSet]));
+  } catch (err) {
+    console.warn("localStorage write failed:", err);
+  }
+}
 
 // Load saved values from localStorage on page load
 function loadFromStorage() {
@@ -226,6 +340,15 @@ function escapeHtml(s) {
   })[m]);
 }
 
+// Column identity (stable across rebuilds as long as label/key match)
+function colId(col) {
+  return `${String(col.key)}||${String(col.label)}`;
+}
+function getVisibleCols() {
+  // preserve order
+  return curColsAll.filter(c => visibleColIds.has(colId(c)));
+}
+
 async function fetchFeeds() {
   const id = els.channelId.value.trim();
   const key = els.apiKey.value.trim();
@@ -235,6 +358,8 @@ async function fetchFeeds() {
 
   if (!/^[0-9]+$/.test(id)) { setStatus("Channel ID must be a positive integer.", "err"); return; }
   if (!key) { setStatus("Read API key is required.", "err"); return; }
+
+  curChannelId = id;
 
   // Save to localStorage before fetching
   saveToStorage();
@@ -290,9 +415,90 @@ function buildTable(data, opts) {
     cols.push({ key: "status", label: "Status" });
   }
 
-  curCols = cols;
+  curColsAll = cols;
 
-  // Render header
+  // Prepare rows
+  curRows = feeds.map(f => ({
+    ...f,
+    created_at_raw: f.created_at || "",
+    created_at: f.created_at ? formatChicago(f.created_at) : "",
+    entry_id: f.entry_id ?? "",
+  }));
+
+  // Apply per-channel hidden columns
+  const hidden = loadHiddenCols(curChannelId);
+  visibleColIds = new Set(curColsAll.map(colId).filter(id => !hidden.has(id)));
+
+  // If user hid everything, fall back to showing all (prevents empty table confusion)
+  if (visibleColIds.size === 0 && curColsAll.length) {
+    visibleColIds = new Set(curColsAll.map(colId));
+    saveHiddenCols(curChannelId, new Set());
+  }
+
+  rebuildColumnPicker();
+  renderTable();
+
+  sortState = { key: "created_at", dir: -1 };
+  sortBy("created_at", true);
+}
+
+// Build the popover checklist
+function rebuildColumnPicker() {
+  els.colList.innerHTML = "";
+  const hidden = new Set(curColsAll.map(colId).filter(id => !visibleColIds.has(id)));
+
+  curColsAll.forEach(col => {
+    const id = colId(col);
+    const wrapper = document.createElement("label");
+    wrapper.className = "col-item";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = visibleColIds.has(id);
+
+    const textWrap = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = col.label;
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = col.key;
+
+    textWrap.appendChild(name);
+    textWrap.appendChild(meta);
+
+    cb.addEventListener("change", () => {
+      if (cb.checked) visibleColIds.add(id);
+      else visibleColIds.delete(id);
+
+      // Prevent hiding all columns
+      if (visibleColIds.size === 0) {
+        visibleColIds.add(id);
+        cb.checked = true;
+        setStatus("You must keep at least one column visible.", "err");
+        setTimeout(() => setStatus("", ""), 1500);
+      }
+
+      const nowHidden = new Set(curColsAll.map(colId).filter(cid => !visibleColIds.has(cid)));
+      saveHiddenCols(curChannelId, nowHidden);
+
+      renderTable();
+    });
+
+    wrapper.appendChild(cb);
+    wrapper.appendChild(textWrap);
+    els.colList.appendChild(wrapper);
+  });
+}
+
+function renderTable() {
+  renderHeader();
+  renderBody(curRows);
+}
+
+function renderHeader() {
+  const cols = getVisibleCols();
   els.thead.innerHTML = "";
   cols.forEach(col => {
     const th = document.createElement("th");
@@ -304,37 +510,27 @@ function buildTable(data, opts) {
     th.addEventListener("click", () => sortBy(col.key));
     els.thead.appendChild(th);
   });
-
-  // Prepare rows
-  curRows = feeds.map(f => ({
-    ...f,
-    // keep raw UTC ISO for sorting and export if needed
-    created_at_raw: f.created_at || "",
-    created_at: f.created_at ? formatChicago(f.created_at) : "",
-    entry_id: f.entry_id ?? "",
-  }));
-
-  renderBody(curRows);
-  sortState = { key: "created_at", dir: -1 };
-  sortBy("created_at", true);
 }
 
 function renderBody(rows) {
+  const cols = getVisibleCols();
   const frag = document.createDocumentFragment();
+
   rows.forEach(row => {
     const tr = document.createElement("tr");
-    curCols.forEach(col => {
+
+    cols.forEach(col => {
       const td = document.createElement("td");
       let val = row[col.key];
       if (val == null) val = "";
 
-      // Replace entire device value if it CONTAINS w{x}r anywhere
+      // Replace entire device value if the DEVICE column contains w{x}r anywhere
       if (/^device\b/i.test(col.label) && typeof val === "string") {
-        const m = val.match(/w(\d+)r/i); // no \b so it matches inside underscores, etc.
+        const m = val.match(/w(\d+)r/i);
         const n = m ? parseInt(m[1], 10) : 0;
         if (n >= 1) val = `worker ${n}`;
       }
-      
+
       if (col.key === "status") {
         const span = document.createElement("span");
         const txt = String(val);
@@ -345,10 +541,13 @@ function renderBody(rows) {
       } else {
         td.textContent = String(val);
       }
+
       tr.appendChild(td);
     });
+
     frag.appendChild(tr);
   });
+
   els.tbody.innerHTML = "";
   els.tbody.appendChild(frag);
 }
@@ -385,13 +584,17 @@ function cmp(a, b) {
 
 function exportCsv() {
   if (!curRows.length) { setStatus("Nothing to export.", "err"); return; }
-  const headers = curCols.map(c => c.label);
-  const keys = curCols.map(c => c.key);
+
+  const cols = getVisibleCols();
+  const headers = cols.map(c => c.label);
+  const keys = cols.map(c => c.key);
+
   let csv = "";
   csv += headers.map(safeCsv).join(",") + "\r\n";
   for (const r of curRows) {
     csv += keys.map(k => safeCsv(r[k])).join(",") + "\r\n";
   }
+
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -411,14 +614,74 @@ function safeCsv(v) {
 }
 
 function clearTable() {
-  curRows = []; curCols = []; sortState = { key: null, dir: 1 };
-  els.thead.innerHTML = ""; els.tbody.innerHTML = ""; els.meta.textContent = "";
+  curRows = [];
+  curColsAll = [];
+  visibleColIds = new Set();
+  sortState = { key: null, dir: 1 };
+  els.thead.innerHTML = "";
+  els.tbody.innerHTML = "";
+  els.meta.textContent = "";
+  els.colList.innerHTML = "";
+  closeCols();
   setStatus("Cleared.", "ok");
+}
+
+// Popover controls
+function openCols() {
+  if (!curColsAll.length) {
+    setStatus("Load data first to configure columns.", "err");
+    setTimeout(() => setStatus("", ""), 1200);
+    return;
+  }
+  els.colPopover.classList.add("open");
+}
+function closeCols() {
+  els.colPopover.classList.remove("open");
+}
+function toggleCols() {
+  if (els.colPopover.classList.contains("open")) closeCols();
+  else openCols();
 }
 
 els.btnFetch.addEventListener("click", fetchFeeds);
 els.btnExport.addEventListener("click", exportCsv);
 els.btnClear.addEventListener("click", clearTable);
+
+els.btnColumns.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleCols();
+});
+els.btnCloseCols.addEventListener("click", closeCols);
+
+els.btnShowAll.addEventListener("click", () => {
+  visibleColIds = new Set(curColsAll.map(colId));
+  saveHiddenCols(curChannelId, new Set());
+  rebuildColumnPicker();
+  renderTable();
+});
+els.btnHideAll.addEventListener("click", () => {
+  // Keep "Entry ID" and "Created" visible as a sensible minimum
+  visibleColIds = new Set();
+  curColsAll.forEach(c => {
+    if (c.key === "entry_id" || c.key === "created_at") visibleColIds.add(colId(c));
+  });
+  const hidden = new Set(curColsAll.map(colId).filter(id => !visibleColIds.has(id)));
+  saveHiddenCols(curChannelId, hidden);
+  rebuildColumnPicker();
+  renderTable();
+});
+
+// Close popover when clicking outside
+document.addEventListener("click", (e) => {
+  if (!els.colPopover.classList.contains("open")) return;
+  const within = els.colPopover.contains(e.target) || els.btnColumns.contains(e.target);
+  if (!within) closeCols();
+});
+
+// Escape closes popover
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeCols();
+});
 
 // Save to localStorage when inputs change
 els.channelId.addEventListener("input", saveToStorage);
