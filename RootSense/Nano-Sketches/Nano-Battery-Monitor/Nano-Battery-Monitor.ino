@@ -6,7 +6,7 @@
 // Analog pins reads between 0 and 1023
 // 0 = 0V and 1023 = 5V
 
-const float mv_per_value = 4.882; 
+const float ADC_REF = 5.07;
 
 void setup(){
   Serial.begin(9600);
@@ -15,8 +15,8 @@ void setup(){
 
 void loop(){
   int batteryReading = analogRead(batteryPin);
-  // convert reading -> ratio -> 4.77 V max 
-  float batteryVolts = batteryReading / 1023.0 * 4.77;
+  // convert reading -> ratio -> ADC_REF V max 
+  float batteryVolts = batteryReading / 1023.0 * ADC_REF;
   Serial.println("Battery reading " + String(batteryReading));
   Serial.println("Battery voltage " + String(batteryVolts));
   Serial.println();  // blank line
