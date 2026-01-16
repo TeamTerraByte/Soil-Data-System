@@ -8,10 +8,18 @@ AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
 SDI12 enviroPro(SOIL_SENSOR_PIN);
 
+// --- Battery monitor (integrated from Nano-Battery-Monitor.ino) ---
+// NOTE: This direct-read method only works if the battery voltage presented to A0 is < 5V.
+// If your battery can exceed ~5V at any time, use a resistor divider (or other scaling) first.
+const int batteryPin = A0;
+// Calibrated ADC (Analog-to-Digital Converter) reference voltage (in Volts).
+// This should match the actual Vcc seen by the ATmega328P for best accuracy.
+const float ADC_REF = 4.09;
+
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 
-const String workerNum = "2";
+const String workerNum = "1";
 
 
 struct Measurements {
@@ -19,11 +27,15 @@ struct Measurements {
   String temp;
 };
 
+float readBatteryVolts();
+String batteryField();
+
 String sendCommand(String command, const unsigned long timeout = 3000);
 
 
 void setup() {
   Serial.begin(9600);
+  pinMode(batteryPin, INPUT);
   if (DEBUG){  // Debug purposes
     while(!Serial){
       delay(1000);
@@ -75,8 +87,31 @@ void respondToNodes() {
   // enviroPro.begin();  // TODO find out if I need to initialize again
   Measurements m = takeMeasurements();
 
-  String payload = "@w" + workerNum + "r\t" + m.moist + "\t" + m.temp;
+  // Battery reading appended as the final tab-separated field
+  String batt = batteryField();
+
+  String payload = "@w" + workerNum + "r\t" + m.moist + "\t" + m.temp + "\t" + batt;
   sendMesh(payload);
+}
+
+float readBatteryVolts() {
+  // Analog pins read between 0 and 1023, where 1023 corresponds to ADC_REF volts.
+  const int reading = analogRead(batteryPin);
+  const float volts = (reading / 1023.0) * ADC_REF;
+
+  if (DEBUG) {
+    Serial.print(F("Battery raw ADC: "));
+    Serial.println(reading);
+    Serial.print(F("Battery volts: "));
+    Serial.println(volts, 3);
+  }
+  return volts;
+}
+
+String batteryField() {
+  // Keep the same "Label,value" style as the other fields.
+  const float v = readBatteryVolts();
+  return String(F("Batt,")) + String(v, 2);
 }
 
 void checkMeshInbound() {

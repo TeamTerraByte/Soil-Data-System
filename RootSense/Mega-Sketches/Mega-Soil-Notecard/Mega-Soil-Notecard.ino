@@ -54,7 +54,17 @@ struct ParsedMessage {
   String header;  // @w{x}r
   String moist;   // Moist,...
   String temp;    // Temp,...
+  String batt;    // Batt,...
 };
+
+// ===== Battery Monitor (local Mega reading) =====
+// WARNING: This direct analog method only works if the voltage presented to A0 is <= ~5V.
+// If your battery can exceed 5V, use a resistor divider before A0.
+const uint8_t batteryPin = A0;
+const float ADC_REF = 5.07; // measured 5V rail used as ADC reference (adjust if needed)
+
+float readBatteryVolts();
+String batteryField();
 
 // Forward declarations
 String sendCommand(String command);
@@ -64,7 +74,7 @@ String measureTemperature();
 String parseMoistureData(String data);
 String parseTemperatureData(String data);
 bool findProbe();
-void uploadNote(String device, String moist, String temp);
+void uploadNote(String device, String moist, String temp, String batt);
 ParsedMessage parseMessage(const String& input);
 void waitForSyncCompletion(unsigned long pollIntervalMs);
 
@@ -151,6 +161,21 @@ void loop() {
   }
 
   delay(100);
+}
+
+
+// ---------------- Battery monitor helpers ----------------
+float readBatteryVolts() {
+  // Convert ADC reading -> ratio -> volts at A0
+  int batteryReading = analogRead(batteryPin);
+  return (batteryReading / 1023.0) * ADC_REF;
+}
+
+
+String batteryField() {
+  // Format as the same key,value style used elsewhere
+  float v = readBatteryVolts();
+  return String("Batt,") + String(v, 2);
 }
 
 
@@ -262,7 +287,7 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
           recvd++;
           
           ParsedMessage pm = parseMessage(line);
-          uploadNote(pm.header, pm.moist, pm.temp);
+          uploadNote(pm.header, pm.moist, pm.temp, pm.batt);
           break;  
         }
       }
@@ -290,11 +315,15 @@ void takeMeasurements() {
   String sm = measureSoilMoisture();
   delay(500);
   String st = measureTemperature();
+  String batt = batteryField();
   Serial.println("hub"); // hub
   Serial.println(sm);    // Moist,+004.65,...
   Serial.println(st);    // Temp,+020.45,...
 
-  uploadNote("hub", sm, st);
+  // Keep battery as the last tab-separated field for consistency with worker payloads
+  Serial.println(batt);  // Batt,3.92
+
+  uploadNote("hub", sm, st, batt);
 }
 
 // TODO: Combine common code with measureTemperature
@@ -449,7 +478,7 @@ String sendCommand(String command) {
 }
 
 
-void uploadNote(String device, String moist, String temp){
+void uploadNote(String device, String moist, String temp, String batt){
   {
     J *req = notecard.newRequest("note.add");
     if (req != NULL) {
@@ -460,6 +489,9 @@ void uploadNote(String device, String moist, String temp){
         JAddStringToObject(body, "dev", device.c_str());
         JAddStringToObject(body, "moist", moist.c_str());
         JAddStringToObject(body, "temp", temp.c_str());
+        if (batt.length() > 0) {
+          JAddStringToObject(body, "batt", batt.c_str());
+        }
       }
       notecard.sendRequest(req);
     }
@@ -483,45 +515,39 @@ void uploadNote(String device, String moist, String temp){
 ParsedMessage parseMessage(const String& input) {
   ParsedMessage out;
 
-  int len = input.length();
-
-  int headerEnd = -1;
-  int moistStart = -1;
-  int moistEnd = -1;
-  int tempStart = -1;
-
-  // Locate boundaries in one scan
-  for (int i = 0; i < len; i++) {
-    char c = input[i];
-
-    // End of header (@w{x}r ends at 'r')
-    if (headerEnd < 0 && c == 'r') {
-      headerEnd = i + 1;
-    }
-
-    // Moist section starts
-    if (moistStart < 0 && c == 'M') {
-      moistStart = i;
-    }
-
-    // Tab ends Moist section
-    if (moistStart >= 0 && moistEnd < 0 && c == '\t') {
-      moistEnd = i;
-      tempStart = i + 1;
-      break;
+  // Header: capture everything up through the worker response token "@w..r"
+  // (We keep any node-id prefix too, since "dev" is just a label upstream.)
+  int atW = input.indexOf("@w");
+  if (atW != -1) {
+    int r = input.indexOf('r', atW);
+    if (r != -1) {
+      out.header = input.substring(0, r + 1);
     }
   }
 
-  // Extract substrings (no whitespace included)
-  if (headerEnd > 0)
-    out.header = input.substring(0, headerEnd);
+  // Fields are tab-separated and (after your Uno integration) end with Batt,<volts>
+  int moistStart = input.indexOf("Moist");
+  if (moistStart == -1) return out;
 
-  if (moistStart >= 0 && moistEnd > moistStart)
-    out.moist = input.substring(moistStart, moistEnd);
+  int t1 = input.indexOf('\t', moistStart);
+  if (t1 == -1) return out;
+  out.moist = input.substring(moistStart, t1);
 
-  if (tempStart >= 0)
+  int tempStart = t1 + 1;
+  int t2 = input.indexOf('\t', tempStart);
+  if (t2 == -1) {
+    // Backward compatibility: older workers may only send Moist + Temp
     out.temp = input.substring(tempStart);
+    out.temp.trim();
+    return out;
+  }
 
+  out.temp = input.substring(tempStart, t2);
+  out.temp.trim();
+
+  int battStart = t2 + 1;
+  out.batt = input.substring(battStart);
+  out.batt.trim();
   return out;
 }
 
@@ -579,7 +605,3 @@ void waitForSyncCompletion(unsigned long pollIntervalMs = 2000) {
     delay(pollIntervalMs);
   }
 }
-
-
-
-
