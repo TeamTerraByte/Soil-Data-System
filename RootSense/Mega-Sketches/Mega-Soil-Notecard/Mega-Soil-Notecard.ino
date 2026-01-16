@@ -61,7 +61,7 @@ struct ParsedMessage {
 // WARNING: This direct analog method only works if the voltage presented to A0 is <= ~5V.
 // If your battery can exceed 5V, use a resistor divider before A0.
 const uint8_t batteryPin = A0;
-const float ADC_REF = 4.03; // measured 5V rail used as ADC reference (adjust if needed)
+const float ADC_REF = 5.06; // measured 5V rail used as ADC reference (adjust if needed)
 
 float readBatteryVolts();
 String batteryField();
