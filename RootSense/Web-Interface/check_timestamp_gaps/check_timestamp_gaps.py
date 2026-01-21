@@ -5,10 +5,14 @@ check_timestamp_gaps.py
 Checks that, for each sensor (field2), the time gap between consecutive rows'
 created_at timestamps is no more than a given threshold (default: 70 minutes).
 
+Also scans the raw CSV for any rows containing the text "Error" (case-insensitive by default).
+
 Usage:
   python3 check_timestamp_gaps.py input.csv
   python3 check_timestamp_gaps.py input.csv --max-minutes 70
   python3 check_timestamp_gaps.py input.csv --sensor-col field2 --time-col created_at
+  python3 check_timestamp_gaps.py input.csv --error-text Error
+  python3 check_timestamp_gaps.py input.csv --error-case-sensitive
 """
 
 from __future__ import annotations
@@ -51,6 +55,37 @@ def parse_created_at(value: str) -> datetime:
     else:
         dt = dt.astimezone(timezone.utc)
     return dt
+
+
+def find_error_lines(
+    path: str,
+    needle: str = "Error",
+    case_sensitive: bool = False,
+) -> List[Tuple[int, str]]:
+    """
+    Returns a list of (line_number, raw_line) for any lines that contain `needle`.
+
+    Note: line_number is 1-based (header is line 1).
+    """
+    matches: List[Tuple[int, str]] = []
+    if not needle:
+        return matches
+
+    if case_sensitive:
+        target = needle
+        def has_needle(line: str) -> bool:
+            return target in line
+    else:
+        target = needle.lower()
+        def has_needle(line: str) -> bool:
+            return target in line.lower()
+
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for lineno, line in enumerate(f, start=1):
+            if has_needle(line):
+                matches.append((lineno, line.rstrip("\n")))
+
+    return matches
 
 
 def read_csv_grouped(
@@ -136,9 +171,30 @@ def main() -> int:
     ap.add_argument("--time-col", default="created_at", help="Timestamp column name (default: created_at)")
     ap.add_argument("--sensor-col", default="field2", help="Sensor ID column name (default: field2)")
     ap.add_argument("--entry-col", default="entry_id", help="Entry id column name (default: entry_id)")
+
+    # NEW: error scanning options
+    ap.add_argument("--error-text", default="Error", help='Text to flag in raw CSV lines (default: "Error")')
+    ap.add_argument(
+        "--error-case-sensitive",
+        action="store_true",
+        help="Make --error-text matching case-sensitive (default: case-insensitive)",
+    )
+
     args = ap.parse_args()
 
     max_gap_seconds = args.max_minutes * 60
+
+    # NEW: scan raw lines for "Error" (or custom needle)
+    error_lines = []
+    try:
+        error_lines = find_error_lines(
+            args.csv_path,
+            needle=args.error_text,
+            case_sensitive=args.error_case_sensitive,
+        )
+    except Exception as e:
+        print(f"[ERROR] Failed scanning for error text: {e}", file=sys.stderr)
+        return 2
 
     try:
         grouped = read_csv_grouped(args.csv_path, args.time_col, args.sensor_col, args.entry_col)
@@ -154,23 +210,32 @@ def main() -> int:
     print(f"Loaded {total_rows} rows across {len(sensor_counts)} sensors.")
     print(f"Max allowed gap: {args.max_minutes} minutes.\n")
 
-    if not violations:
-        print("OK: No gaps exceeded the threshold.")
-        return 0
-
-    print(f"FAIL: Found {len(violations)} gap(s) exceeding the threshold:\n")
-    # Sort by largest gap first
-    violations.sort(key=lambda x: x[3], reverse=True)
-
-    for sensor_id, prev, curr, gap in violations:
-        prev_id = prev.entry_id or "?"
-        curr_id = curr.entry_id or "?"
-        print(f"Sensor {sensor_id}: gap {format_gap(gap)}")
-        print(f"  prev: entry_id={prev_id} created_at={prev.raw_created_at}")
-        print(f"  curr: entry_id={curr_id} created_at={curr.raw_created_at}")
+    # NEW: report "Error" lines
+    if error_lines:
+        print(f'ALERT: Found {len(error_lines)} line(s) containing {args.error_text!r}:\n')
+        for lineno, raw in error_lines:
+            print(f"  Line {lineno}: {raw}")
         print()
 
-    # Non-zero exit so scripts can detect failure
+    if not violations and not error_lines:
+        print("OK: No gaps exceeded the threshold and no error-text lines were found.")
+        return 0
+
+    # If there are timestamp violations, print them (existing behavior)
+    if violations:
+        print(f"FAIL: Found {len(violations)} gap(s) exceeding the threshold:\n")
+        # Sort by largest gap first
+        violations.sort(key=lambda x: x[3], reverse=True)
+
+        for sensor_id, prev, curr, gap in violations:
+            prev_id = prev.entry_id or "?"
+            curr_id = curr.entry_id or "?"
+            print(f"Sensor {sensor_id}: gap {format_gap(gap)}")
+            print(f"  prev: entry_id={prev_id} created_at={prev.raw_created_at}")
+            print(f"  curr: entry_id={curr_id} created_at={curr.raw_created_at}")
+            print()
+
+    # Non-zero exit so scripts can detect failure (violations and/or error lines)
     return 1
 
 
