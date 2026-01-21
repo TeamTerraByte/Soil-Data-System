@@ -91,7 +91,6 @@
     white-space:nowrap;
   }
 
-
   .muted{ color: var(--muted); font-size:.92rem; }
   .help{ margin-top:6px; }
   .errorText{
@@ -116,11 +115,9 @@
     gap:12px;
     align-items:start; /* was end */
   }
-  
+
   .rowTop > div { display:flex; flex-direction:column; }
   .rowTop .help { margin-top:6px; min-height: 18px; }  /* keeps row consistent */
-
-
 
   .rowSensor{
     display:grid;
@@ -356,6 +353,37 @@
       <pre class="status" id="status"></pre>
     </details>
 
+    <!-- NEW: Unusable rows -->
+    <details class="statusWrap">
+      <summary>Unusable Rows (debug)</summary>
+      <div class="muted" id="badSummary" style="margin:6px 0 10px;"></div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <button id="downloadBadCsvBtn" type="button" style="width:auto; padding:10px 12px;">Download Unusable CSV</button>
+        <button id="clearBadBtn" type="button" style="width:auto; padding:10px 12px;">Clear Log</button>
+      </div>
+
+      <div style="overflow:auto; max-height:320px; border:1px solid var(--border); border-radius:10px;">
+        <table id="badTable" style="width:100%; border-collapse:collapse; font-size:.9rem;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">Reason</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">created_at</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">field1</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">field3</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">field4</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">entry_id</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="muted" style="margin-top:8px;">
+        Showing first <span id="badShownCount">0</span> of <span id="badTotalCount">0</span> unusable row(s).
+      </div>
+    </details>
+
   </div>
 </div>
 
@@ -407,6 +435,18 @@
     const elApplyDateBtn = document.getElementById("applyDateBtn");
     const elValidRangeText = document.getElementById("validRangeText");
     const elDateError = document.getElementById("dateError");
+
+    // ---- Unusable row logging ----
+    const elBadSummary = document.getElementById("badSummary");
+    const elBadTable = document.getElementById("badTable");
+    const elBadShownCount = document.getElementById("badShownCount");
+    const elBadTotalCount = document.getElementById("badTotalCount");
+    const elDownloadBadCsvBtn = document.getElementById("downloadBadCsvBtn");
+    const elClearBadBtn = document.getElementById("clearBadBtn");
+
+    const BAD_LOG_LIMIT = 250;   // store up to N rows in memory
+    const BAD_SHOW_LIMIT = 80;   // show first N rows in table
+    let badRowsLog = [];         // { reason, created_at, field1, field3, field4, entry_id }
 
     let moistCharts = new Array(8).fill(null);
     let tempCharts  = new Array(8).fill(null);
@@ -797,32 +837,137 @@
       }, 150));
     }
 
+    // ---- Unusable row logging helpers ----
+    function logBadRow(reason, feed){
+      if (badRowsLog.length >= BAD_LOG_LIMIT) return;
+
+      badRowsLog.push({
+        reason,
+        created_at: String(feed?.created_at ?? ""),
+        field1: String(feed?.field1 ?? ""),
+        field3: String(feed?.field3 ?? ""),
+        field4: String(feed?.field4 ?? ""),
+        entry_id: String(feed?.entry_id ?? "")
+      });
+    }
+
+    function summarizeBadRows(){
+      const counts = new Map();
+      for (const r of badRowsLog){
+        counts.set(r.reason, (counts.get(r.reason) || 0) + 1);
+      }
+      return Array.from(counts.entries()).sort((a,b) => b[1]-a[1]);
+    }
+
+    function renderBadRowsUI(){
+      if (!elBadTable) return;
+
+      const summary = summarizeBadRows();
+      const total = badRowsLog.length;
+
+      elBadTotalCount.textContent = String(total);
+
+      if (total === 0){
+        if (elBadSummary) elBadSummary.textContent = "No unusable rows logged.";
+        if (elBadShownCount) elBadShownCount.textContent = "0";
+        elBadTable.querySelector("tbody").innerHTML = "";
+        return;
+      }
+
+      if (elBadSummary){
+        elBadSummary.innerHTML =
+          summary.map(([reason, n]) => `${escapeHtml(reason)}: <b>${n}</b>`).join(" &nbsp;•&nbsp; ");
+      }
+
+      const tbody = elBadTable.querySelector("tbody");
+      const show = badRowsLog.slice(0, BAD_SHOW_LIMIT);
+      if (elBadShownCount) elBadShownCount.textContent = String(show.length);
+
+      tbody.innerHTML = show.map(r => `
+        <tr>
+          <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.reason)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.created_at)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.field1)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border); max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.field3)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border); max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.field4)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.entry_id)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function badRowsToCsv(){
+      const header = ["reason","created_at","field1","field3","field4","entry_id"];
+      const lines = [header.join(",")];
+      for (const r of badRowsLog){
+        const row = [
+          r.reason, r.created_at, r.field1, r.field3, r.field4, r.entry_id
+        ].map(v => `"${String(v).replace(/"/g,'""')}"`);
+        lines.push(row.join(","));
+      }
+      return lines.join("\n");
+    }
+
+    function downloadTextFile(filename, text){
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearBadLog(){
+      badRowsLog = [];
+      renderBadRowsUI();
+    }
+
     // ---- Data parse / render ----
     function buildRowsForSensor(feeds, sensorName){
-      const rows = feeds
-        .filter(f => (f?.field1 || "").trim() === sensorName)
-        .map(f => {
-          const createdAt = String(f.created_at || "").trim();
-          const ms = parseCreatedAtToMs(createdAt);
-          if (!Number.isFinite(ms)) return null;
+      const rows = [];
 
-          if (!passesFilter(ms)) return null;
+      for (const f of feeds){
+        const fSensor = (f?.field1 || "").trim();
 
-          const moist = parseFieldSeries(f.field3);
-          const temp  = parseFieldSeries(f.field4);
-          if (!moist || !temp) return null;
+        // Not the selected sensor -> ignore (not "unusable")
+        if (fSensor !== sensorName) continue;
 
-          return {
-            ms,
-            created_at: createdAt,
-            created_at_label: formatCreatedAt(createdAt),
-            moist,
-            temp
-          };
-        })
-        .filter(Boolean)
-        .sort((a,b) => a.ms - b.ms);
+        const createdAt = String(f?.created_at || "").trim();
+        const ms = parseCreatedAtToMs(createdAt);
+        if (!Number.isFinite(ms)){
+          logBadRow("BAD_CREATED_AT", f);
+          continue;
+        }
 
+        if (!passesFilter(ms)){
+          logBadRow("OUTSIDE_ACTIVE_WINDOW", f);
+          continue;
+        }
+
+        const moist = parseFieldSeries(f?.field3);
+        if (!moist){
+          logBadRow("BAD_FIELD3_MOIST_PARSE", f);
+          continue;
+        }
+
+        const temp = parseFieldSeries(f?.field4);
+        if (!temp){
+          logBadRow("BAD_FIELD4_TEMP_PARSE", f);
+          continue;
+        }
+
+        rows.push({
+          ms,
+          created_at: createdAt,
+          created_at_label: formatCreatedAt(createdAt),
+          moist,
+          temp
+        });
+      }
+
+      rows.sort((a,b) => a.ms - b.ms);
       return rows;
     }
 
@@ -880,13 +1025,17 @@
 
     function rerenderAll(){
       if (!currentSensorName || !Array.isArray(lastFeeds) || lastFeeds.length === 0) return;
+      clearBadLog(); // NEW: recalc unusables for current view
       const rows = buildRowsForSensor(lastFeeds, currentSensorName);
       renderSensor(rows, currentSensorName);
+      renderBadRowsUI();
     }
 
     async function loadAndRender(){
       saveReadKey(elReadKey.value);
       setDateError("");
+
+      clearBadLog(); // NEW: reset unusable log per load
 
       elSensorSel.disabled = true;
       elSensorSel.innerHTML = `<option>Loading…</option>`;
@@ -949,11 +1098,14 @@
       const defaultSensor = sensors[0];
       const rows = buildRowsForSensor(feeds, defaultSensor);
       renderSensor(rows, defaultSensor);
+      renderBadRowsUI(); // NEW
 
       elSensorSel.onchange = () => {
         const sensorName = elSensorSel.value;
+        clearBadLog();
         const rows2 = buildRowsForSensor(lastFeeds, sensorName);
         renderSensor(rows2, sensorName);
+        renderBadRowsUI();
       };
 
       const chName = json?.channel?.name ? ` (${json.channel.name})` : "";
@@ -1008,52 +1160,13 @@
     elStartText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyFilter(); });
     elEndText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyFilter(); });
 
-    // ---- Layout ----
-    function isMobile(){ return window.matchMedia("(max-width: 900px)").matches; }
-    function clearContainers(){
-      elMoistCol.innerHTML  = "";
-      elTempCol.innerHTML   = "";
-      elZipperCol.innerHTML = "";
-    }
-    function placeCardsForViewport(){
-      clearContainers();
-      if (isMobile()){
-        for (let i = 0; i < 8; i++){
-          elZipperCol.appendChild(moistCards[i]);
-          elZipperCol.appendChild(tempCards[i]);
-        }
-      } else {
-        for (let i = 0; i < 8; i++){
-          elMoistCol.appendChild(moistCards[i]);
-          elTempCol.appendChild(tempCards[i]);
-        }
-      }
-    }
-    function debounce(fn, wait){
-      let t = null;
-      return (...args) => {
-        if (t) clearTimeout(t);
-        t = setTimeout(() => fn(...args), wait);
-      };
-    }
+    // ---- Download/Clear bad log buttons ----
+    elDownloadBadCsvBtn?.addEventListener("click", () => {
+      const csv = badRowsToCsv();
+      downloadTextFile("thingspeak_unusable_rows.csv", csv);
+    });
 
-    function buildCardsAndChartsOnce(){
-      for (let i = 0; i < 8; i++){
-        const m = makeChartCard(`Moisture ${depthLabel(i)}`);
-        moistCards[i]  = m.card;
-        moistCharts[i] = makeDepthChart(m.canvas, "Moisture (percent)");
-
-        const t = makeChartCard(`Temperature ${depthLabel(i)}`);
-        tempCards[i]  = t.card;
-        tempCharts[i] = makeDepthChart(t.canvas, "Temperature (°C)");
-      }
-      placeCardsForViewport();
-
-      window.addEventListener("resize", debounce(() => {
-        placeCardsForViewport();
-        for (const c of [...moistCharts, ...tempCharts]) c?.resize?.();
-      }, 150));
-    }
+    elClearBadBtn?.addEventListener("click", () => clearBadLog());
 
     // ---- Init ----
     setTheme(getInitialTheme());
