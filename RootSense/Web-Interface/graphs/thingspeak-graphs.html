@@ -289,11 +289,11 @@
     <!-- Sensor row -->
     <div class="rowSensor">
       <div>
-        <label for="sensorSelect">Sensor (field1)</label>
+        <label for="sensorSelect">Sensor (field1 = Device)</label>
         <select id="sensorSelect" disabled>
           <option>Load data first…</option>
         </select>
-        <div class="muted help">Hover a point to see its timestamp.</div>
+        <div class="muted help">Hover a point to see its timestamp (created_at).</div>
       </div>
     </div>
 
@@ -347,13 +347,13 @@
 
     <div class="errorText" id="dateError"></div>
 
-    <!-- Status: collapsible so it doesn't dominate the UI -->
+    <!-- Status -->
     <details class="statusWrap" open>
       <summary>Details</summary>
       <pre class="status" id="status"></pre>
     </details>
 
-    <!-- NEW: Unusable rows -->
+    <!-- Unusable rows -->
     <details class="statusWrap">
       <summary>Unusable Rows (debug)</summary>
       <div class="muted" id="badSummary" style="margin:6px 0 10px;"></div>
@@ -369,9 +369,10 @@
             <tr>
               <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">Reason</th>
               <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">created_at</th>
-              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">field1</th>
-              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">field3</th>
-              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">field4</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">Device (field1)</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">Soil Moist (field2)</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">Soil Temp (field3)</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">Battery (field4)</th>
               <th style="text-align:left; padding:8px; border-bottom:1px solid var(--border);">entry_id</th>
             </tr>
           </thead>
@@ -408,6 +409,19 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script>
+    /*
+      UPDATED FIELD MAPPING (per your ThingSpeak screenshot):
+        field1 = Device
+        field2 = Soil Moist
+        field3 = Soil Temp
+        field4 = Battery
+
+      Previously, field2 was "Time Since Epoch". You removed it, so we now parse:
+        Moisture from field2
+        Temperature from field3
+        Battery from field4 (logged/parsed, not graphed here)
+    */
+
     const DEPTHS_CM = [-10, -20, -30, -40, -50, -60, -70, -80];
     const depthLabel = (i) => `${DEPTHS_CM[i]} cm`;
 
@@ -446,7 +460,7 @@
 
     const BAD_LOG_LIMIT = 250;   // store up to N rows in memory
     const BAD_SHOW_LIMIT = 80;   // show first N rows in table
-    let badRowsLog = [];         // { reason, created_at, field1, field3, field4, entry_id }
+    let badRowsLog = [];         // { reason, created_at, field1, field2, field3, field4, entry_id }
 
     let moistCharts = new Array(8).fill(null);
     let tempCharts  = new Array(8).fill(null);
@@ -524,6 +538,8 @@
       const v = Number.parseFloat(String(s).trim());
       return Number.isFinite(v) ? v : null;
     }
+
+    // Parses strings like: "Moist,+001.91,+006.26,...(8 vals)" or "Temp,+023.13,...(8 vals)"
     function parseFieldSeries(fieldStr){
       if (!fieldStr || typeof fieldStr !== "string") return null;
       const parts = fieldStr.split(",").map(x => x.trim()).filter(Boolean);
@@ -533,6 +549,17 @@
       if (nums.length !== 8) return null;
       return nums;
     }
+
+    // Parses Battery field (common formats: "Batt,4.04" OR "4.04")
+    function parseBattery(fieldStr){
+      if (fieldStr == null) return null;
+      const s = String(fieldStr).trim();
+      if (!s) return null;
+      const parts = s.split(",").map(x => x.trim()).filter(Boolean);
+      const candidate = parts.length >= 2 ? parts[parts.length - 1] : parts[0];
+      return parseSignedFloat(candidate);
+    }
+
     function uniqueSensors(feeds){
       const set = new Set();
       for (const f of feeds){
@@ -566,7 +593,6 @@
 
     // Build ms range from day inputs (inclusive whole days, local time)
     function dayStartMs(dayStr){
-      // dayStr: YYYY-MM-DD
       return new Date(`${dayStr}T00:00:00`).getTime();
     }
     function dayEndMs(dayStr){
@@ -608,7 +634,6 @@
       const maxStr = new Date(dataMaxMs).toLocaleString();
       elValidRangeText.textContent = `Valid: ${minStr} → ${maxStr}`;
 
-      // date input min/max
       const minDay = msToLocalDay(dataMinMs);
       const maxDay = msToLocalDay(dataMaxMs);
       elStartDay.min = minDay;
@@ -623,11 +648,9 @@
       activeStartMs = dataMinMs;
       activeEndMs   = dataMaxMs;
 
-      // Populate GUI day range with whole-day bounds (nice defaults)
       elStartDay.value = msToLocalDay(dataMinMs);
       elEndDay.value   = msToLocalDay(dataMaxMs);
 
-      // Populate text fields (human readable)
       elStartText.value = new Date(activeStartMs).toLocaleString();
       elEndText.value   = new Date(activeEndMs).toLocaleString();
     }
@@ -642,17 +665,14 @@
 
       const guiStartDay = elStartDay.value.trim();
       const guiEndDay   = elEndDay.value.trim();
-
       const guiHasBoth = guiStartDay && guiEndDay;
 
       if (guiHasBoth){
-        // Validate day ordering
         if (guiEndDay < guiStartDay){
           setDateError("End day must be the same day as or after the start day.");
           return false;
         }
 
-        // Validate within data min/max days
         const minDay = msToLocalDay(dataMinMs);
         const maxDay = msToLocalDay(dataMaxMs);
 
@@ -661,11 +681,9 @@
           return false;
         }
 
-        // Apply as inclusive whole days
         activeStartMs = dayStartMs(guiStartDay);
         activeEndMs   = dayEndMs(guiEndDay);
 
-        // Keep text boxes consistent (optional: show the exact applied times)
         elStartText.value = new Date(activeStartMs).toLocaleString();
         elEndText.value   = new Date(activeEndMs).toLocaleString();
 
@@ -673,7 +691,6 @@
         return true;
       }
 
-      // Otherwise, use text range (date + time)
       const startMs = parseTypedDateToMs(elStartText.value);
       const endMs   = parseTypedDateToMs(elEndText.value);
 
@@ -695,7 +712,6 @@
       activeStartMs = startMs;
       activeEndMs   = endMs;
 
-      // If user applied a text range, clear GUI day range (so it's clear which one is active)
       elStartDay.value = "";
       elEndDay.value = "";
 
@@ -845,6 +861,7 @@
         reason,
         created_at: String(feed?.created_at ?? ""),
         field1: String(feed?.field1 ?? ""),
+        field2: String(feed?.field2 ?? ""),
         field3: String(feed?.field3 ?? ""),
         field4: String(feed?.field4 ?? ""),
         entry_id: String(feed?.entry_id ?? "")
@@ -888,19 +905,20 @@
           <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.reason)}</td>
           <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.created_at)}</td>
           <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.field1)}</td>
-          <td style="padding:8px; border-bottom:1px solid var(--border); max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.field3)}</td>
-          <td style="padding:8px; border-bottom:1px solid var(--border); max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.field4)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border); max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.field2)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border); max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.field3)}</td>
+          <td style="padding:8px; border-bottom:1px solid var(--border); max-width:140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(r.field4)}</td>
           <td style="padding:8px; border-bottom:1px solid var(--border);">${escapeHtml(r.entry_id)}</td>
         </tr>
       `).join("");
     }
 
     function badRowsToCsv(){
-      const header = ["reason","created_at","field1","field3","field4","entry_id"];
+      const header = ["reason","created_at","field1","field2","field3","field4","entry_id"];
       const lines = [header.join(",")];
       for (const r of badRowsLog){
         const row = [
-          r.reason, r.created_at, r.field1, r.field3, r.field4, r.entry_id
+          r.reason, r.created_at, r.field1, r.field2, r.field3, r.field4, r.entry_id
         ].map(v => `"${String(v).replace(/"/g,'""')}"`);
         lines.push(row.join(","));
       }
@@ -946,24 +964,31 @@
           continue;
         }
 
-        const moist = parseFieldSeries(f?.field3);
+        // UPDATED: Moisture is now field2, Temp is field3
+        const moist = parseFieldSeries(f?.field2);
         if (!moist){
-          logBadRow("BAD_FIELD3_MOIST_PARSE", f);
+          logBadRow("BAD_FIELD2_MOIST_PARSE", f);
           continue;
         }
 
-        const temp = parseFieldSeries(f?.field4);
+        const temp = parseFieldSeries(f?.field3);
         if (!temp){
-          logBadRow("BAD_FIELD4_TEMP_PARSE", f);
+          logBadRow("BAD_FIELD3_TEMP_PARSE", f);
           continue;
         }
+
+        // Battery is field4 (optional for plotting, but we parse it for debugging/visibility)
+        const battery = parseBattery(f?.field4);
+        // If you want battery REQUIRED, uncomment below:
+        // if (battery === null){ logBadRow("BAD_FIELD4_BATT_PARSE", f); continue; }
 
         rows.push({
           ms,
           created_at: createdAt,
           created_at_label: formatCreatedAt(createdAt),
           moist,
-          temp
+          temp,
+          battery
         });
       }
 
@@ -1025,7 +1050,7 @@
 
     function rerenderAll(){
       if (!currentSensorName || !Array.isArray(lastFeeds) || lastFeeds.length === 0) return;
-      clearBadLog(); // NEW: recalc unusables for current view
+      clearBadLog();
       const rows = buildRowsForSensor(lastFeeds, currentSensorName);
       renderSensor(rows, currentSensorName);
       renderBadRowsUI();
@@ -1035,7 +1060,7 @@
       saveReadKey(elReadKey.value);
       setDateError("");
 
-      clearBadLog(); // NEW: reset unusable log per load
+      clearBadLog();
 
       elSensorSel.disabled = true;
       elSensorSel.innerHTML = `<option>Loading…</option>`;
@@ -1071,7 +1096,6 @@
       dataMaxMs = mm.maxMs;
       updateValidRangeUI();
 
-      // Default filter if unset/out-of-range
       if (!Number.isFinite(activeStartMs) || !Number.isFinite(activeEndMs) ||
           activeStartMs < dataMinMs || activeEndMs > dataMaxMs) {
         setDefaultRangesFromData();
@@ -1098,7 +1122,7 @@
       const defaultSensor = sensors[0];
       const rows = buildRowsForSensor(feeds, defaultSensor);
       renderSensor(rows, defaultSensor);
-      renderBadRowsUI(); // NEW
+      renderBadRowsUI();
 
       elSensorSel.onchange = () => {
         const sensorName = elSensorSel.value;
@@ -1148,15 +1172,12 @@
     // ---- Date UI events ----
     elApplyDateBtn.addEventListener("click", () => validateAndApplyFilter());
 
-    // Auto-apply when GUI changes (keeps end >= start)
     elStartDay.addEventListener("change", () => {
-      // Force endDay.min to startDay, so user can't pick earlier
       if (elStartDay.value) elEndDay.min = elStartDay.value;
       validateAndApplyFilter();
     });
     elEndDay.addEventListener("change", () => validateAndApplyFilter());
 
-    // Text: apply on Enter
     elStartText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyFilter(); });
     elEndText.addEventListener("keydown", (e) => { if (e.key === "Enter") validateAndApplyFilter(); });
 
