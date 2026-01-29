@@ -72,7 +72,7 @@ void setup() {
   }
 
   if (DEBUG) {
-    Serial.println("Enter SDI-12 commands (e.g. C0!, D0!, ?!)");
+    Serial.println("Enter SDI-12 commands (e.g. , ?!, " + probeAddress + "C0!, " + probeAddress + "D0!)");
   }
 }
 
