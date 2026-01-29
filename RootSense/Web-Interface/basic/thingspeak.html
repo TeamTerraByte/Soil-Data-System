@@ -399,7 +399,6 @@ function buildTable(data, opts) {
   for (let i = 1; i <= 8; i++) {
     const key = "field" + i;
     const fieldName = String(channel[key] ?? "").trim();
-    if (/^time\s+since\s+epoch$/i.test(fieldName)) continue;
 
     if (channel[key] || feeds.some(f => f[key] != null)) {
       cols.push({ key, label: channel[key] ? `${channel[key]} (field${i})` : `field${i}` });
