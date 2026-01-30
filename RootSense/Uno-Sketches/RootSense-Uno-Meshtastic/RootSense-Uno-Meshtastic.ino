@@ -14,7 +14,7 @@ SDI12 enviroPro(SOIL_SENSOR_PIN);
 const int batteryPin = A0;
 // Calibrated ADC (Analog-to-Digital Converter) reference voltage (in Volts).
 // This should match the actual Vcc seen by the ATmega328P for best accuracy.
-const float ADC_REF = 4.96;
+const float ADC_REF = 4.96;    
 
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
@@ -46,9 +46,6 @@ void setup() {
   delay(POWER_STABILIZATION_DELAY);
 
   enviroPro.begin();
-  while (!initializeProbe()) {
-    delay(1000);
-  }
 }
 
 void loop() {
@@ -124,7 +121,13 @@ void checkMeshInbound() {
     Serial.println(line);
 
     if (line.indexOf("@w" + workerNum + "q") != -1) {
-      respondToNodes();
+      bool sensor_ready = initializeProbe();
+      if (!sensor_ready){
+        sendMesh("@w" + workerNum + "e Error querying soil sensor");
+      }
+      else {
+        respondToNodes();
+      }
     }
   }
 }
