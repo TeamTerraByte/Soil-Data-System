@@ -41,41 +41,46 @@ with open(csv_filename, newline="", encoding="utf-8") as file:
             sensors["worker2"].append(row)
 
 
-# Parse the data
-timestamps = []
-voltages = []
+for sensor in sensors.keys():
+    # Parse the data
+    timestamps = []
+    voltages = []
 
-for row in sensors["hub"]:
-    # Parse timestamp
-    timestamp_str = row["Created (Chicago)"]
-    timestamp = datetime.strptime(timestamp_str, '%m/%d/%Y, %H:%M:%S')
-    timestamps.append(timestamp)
-    
-    # Parse voltage (remove 'Batt,' prefix and convert to float)
-    voltage_str = row[1]
-    voltage = float(voltage_str.split(',')[1])
-    voltages.append(voltage)
+    if len(sensors[sensor]) == 0:
+        print("Sensor data from", sensor, "is not present.")
+        continue
 
-# Create the plot
-fig = go.Figure()
+    for row in sensors[sensor]:
+        # Parse timestamp
+        timestamp_str = row["Created (Chicago)"]
+        timestamp = datetime.strptime(timestamp_str, '%m/%d/%Y, %H:%M:%S')
+        timestamps.append(timestamp)
+        
+        # Parse voltage (remove 'Batt,' prefix and convert to float)
+        voltage_str = row["Battery (field4)"]
+        voltage = float(voltage_str.split(',')[1])
+        voltages.append(voltage)
 
-fig.add_trace(go.Scatter(
-    x=timestamps,
-    y=voltages,
-    mode='lines+markers',
-    name='Battery Voltage',
-    line=dict(color='blue', width=2),
-    marker=dict(size=6)
-))
+    # Create the plot
+    fig = go.Figure()
 
-# Update layout
-fig.update_layout(
-    title='Battery Voltage Over Time',
-    xaxis_title='Time',
-    yaxis_title='Voltage (V)',
-    hovermode='x unified',
-    template='plotly_white'
-)
+    fig.add_trace(go.Scatter(
+        x=timestamps,
+        y=voltages,
+        mode='lines+markers',
+        name=sensor + ' Battery Voltage',
+        line=dict(color='blue', width=2),
+        marker=dict(size=6)
+    ))
 
-# Show the plot
-fig.show()
+    # Update layout
+    fig.update_layout(
+        title='Battery Voltage Over Time',
+        xaxis_title='Time',
+        yaxis_title='Voltage (V)',
+        hovermode='x unified',
+        template='plotly_white'
+    )
+
+    # Show the plot
+    fig.show()
