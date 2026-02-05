@@ -6,6 +6,8 @@
 
 AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
+const String workerNum = "3";
+
 SDI12 enviroPro(SOIL_SENSOR_PIN);
 
 // --- Battery monitor (integrated from Nano-Battery-Monitor.ino) ---
@@ -18,8 +20,6 @@ const float ADC_REF = 4.96;
 
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
-
-const String workerNum = "2";
 
 
 struct Measurements {

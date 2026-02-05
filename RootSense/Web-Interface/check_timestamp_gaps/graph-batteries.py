@@ -75,7 +75,7 @@ for sensor in sensors.keys():
 
     # Update layout
     fig.update_layout(
-        title='Battery Voltage Over Time',
+        title='Battery Voltage of ' + sensor + ' Over Time',
         xaxis_title='Time',
         yaxis_title='Voltage (V)',
         hovermode='x unified',
