@@ -58,7 +58,13 @@ for sensor in sensors.keys():
                 "Gap detected at row entry",
                 row["Entry ID"],
                 "with a gap of",
-                delta
+                delta,
+                "for sensor",
+                sensor,
+                "at time",
+                row["Created (Chicago)"],
+                "with",
+                row["Battery (field4)"]
             )
             total_gaps += 1
 

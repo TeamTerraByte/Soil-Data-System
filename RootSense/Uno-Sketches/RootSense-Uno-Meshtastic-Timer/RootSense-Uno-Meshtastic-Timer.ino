@@ -6,6 +6,8 @@
 
 AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
+#define SLEEP_PIN 11
+#define BATTERY_PIN A0
 const String workerNum = "3";
 
 SDI12 enviroPro(SOIL_SENSOR_PIN);
@@ -13,7 +15,6 @@ SDI12 enviroPro(SOIL_SENSOR_PIN);
 // --- Battery monitor (integrated from Nano-Battery-Monitor.ino) ---
 // NOTE: This direct-read method only works if the battery voltage presented to A0 is < 5V.
 // If your battery can exceed ~5V at any time, use a resistor divider (or other scaling) first.
-const int batteryPin = A0;
 // Calibrated ADC (Analog-to-Digital Converter) reference voltage (in Volts).
 // This should match the actual Vcc seen by the ATmega328P for best accuracy.
 const float ADC_REF = 4.96;    
@@ -35,7 +36,9 @@ String sendCommand(String command, const unsigned long timeout = 3000);
 
 void setup() {
   Serial.begin(9600);
-  pinMode(batteryPin, INPUT);
+  pinMode(BATTERY_PIN, INPUT);
+  pinMode(SLEEP_PIN, OUTPUT);
+  digitalWrite(SLEEP_PIN, LOW);
   if (DEBUG){  // Debug purposes
     while(!Serial){
       delay(1000);
@@ -66,7 +69,7 @@ void loop() {
 
   // Listen for inbound Meshtastic TEXTMSG lines
   checkMeshInbound();
-
+  respondToNodes();  // TODO: remove this after initial timer testing
   
   delay(50); // normal delay for normal operation
   // delay(10000);  // long delay for debugging
@@ -89,11 +92,14 @@ void respondToNodes() {
 
   String payload = "@w" + workerNum + "r\t" + m.moist + "\t" + m.temp + "\t" + batt;
   sendMesh(payload);
+  delay(10000);
+  Serial.println("Sleeping now");
+  digitalWrite(SLEEP_PIN, HIGH);
 }
 
 float readBatteryVolts() {
   // Analog pins read between 0 and 1023, where 1023 corresponds to ADC_REF volts.
-  const int reading = analogRead(batteryPin);
+  const int reading = analogRead(BATTERY_PIN);
   const float volts = (reading / 1023.0) * ADC_REF;
 
   if (DEBUG) {
@@ -112,7 +118,7 @@ String batteryField() {
 }
 
 void checkMeshInbound() {
-  while (meshSerial.available()) {
+  while (meshSerial.available()) {  // TODO: see if I can eliminate this while loop
     String line = meshSerial.readStringUntil('\n');
     line.trim();
     if (line.length() == 0) continue;
