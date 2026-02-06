@@ -27,6 +27,8 @@
   #define LOG_WRITE(...)
 #endif
 
+#define SLEEP_PIN 51
+
 // ------ ---------- SDI-12 ----------------
 #define DATA_PIN 11
 
@@ -74,7 +76,7 @@ String measureTemperature();
 String parseMoistureData(String data);
 String parseTemperatureData(String data);
 bool findProbe();
-void uploadNote(String device, String moist, String temp, String batt);
+void uploadNote(String device, String moist, String temp, String batt = "N/A");
 ParsedMessage parseMessage(const String& input);
 void waitForSyncCompletion(unsigned long pollIntervalMs);
 
@@ -97,6 +99,8 @@ void splitPayload(const String& input,
 void setup() {
   delay(2500);
   LOG_BEGIN(9600);
+  pinMode(SLEEP_PIN, OUTPUT);
+  digitalWrite(SLEEP_PIN, LOW);
   
   notecard.begin();
   notecard.setDebugOutputStream(Serial);
@@ -129,38 +133,45 @@ void setup() {
   lastMeasurement = millis();
 
   // --- Query mesh nodes once at startup ---
-  LOG_PRINTLN(F("[Mesh] Querying nodes..."));
-  uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
-  LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
-  LOG_PRINTLN(got);
+  // LOG_PRINTLN(F("[Mesh] Querying nodes..."));
+  // uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
+  // LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
+  // LOG_PRINTLN(got);
+
+  Serial.println("Skipping worker queries for timer testing...");
+  delay(10000);
+  digitalWrite(SLEEP_PIN, HIGH);
 }
 
 
 void loop() {
-  // Periodic SDI-12 measurement
-  if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
+  //======================================================================================================================================================
+  // loop() is commented out because I am replacing it with a hardware sleep timer
+  //======================================================================================================================================================
+  // // Periodic SDI-12 measurement
+  // if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
 
-    // local sensor measurement
-    mySDI12.begin();
-    takeMeasurements();
-    lastMeasurement = millis();
+  //   // local sensor measurement
+  //   mySDI12.begin();
+  //   takeMeasurements();
+  //   lastMeasurement = millis();
 
-    delay(500);  // delay so it doesn't block the meshtastic query?
+  //   delay(500);  // delay so it doesn't block the meshtastic query?
 
-    // other sensor measurements
-    uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
-    LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
-    LOG_PRINTLN(got);
-    queryNumber += 1;
-  }
+  //   // other sensor measurements
+  //   uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
+  //   LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
+  //   LOG_PRINTLN(got);
+  //   queryNumber += 1;
+  // }
 
-  // (Optional) Non-blocking echo of any unsolicited mesh text to USB
-  while (Serial1.available() > 0) {
-    char c = Serial1.read();
-    LOG_WRITE(c);
-  }
+  // // (Optional) Non-blocking echo of any unsolicited mesh text to USB
+  // while (Serial1.available() > 0) {
+  //   char c = Serial1.read();
+  //   LOG_WRITE(c);
+  // }
 
-  delay(100);
+  // delay(100);
 }
 
 
@@ -315,15 +326,16 @@ void takeMeasurements() {
   String sm = measureSoilMoisture();
   delay(500);
   String st = measureTemperature();
-  String batt = batteryField();
+  // String batt = batteryField();  // removing battery montior for now
   Serial.println("hub"); // hub
   Serial.println(sm);    // Moist,+004.65,...
   Serial.println(st);    // Temp,+020.45,...
 
   // Keep battery as the last tab-separated field for consistency with worker payloads
-  Serial.println(batt);  // Batt,3.92
+  // Serial.println(batt);  // Batt,3.92 // removing battery montior for now
 
-  uploadNote("hub", sm, st, batt);
+  // uploadNote("hub", sm, st, batt); // removing battery montior for now
+  uploadNote("hub", sm, st);
 }
 
 // TODO: Combine common code with measureTemperature
