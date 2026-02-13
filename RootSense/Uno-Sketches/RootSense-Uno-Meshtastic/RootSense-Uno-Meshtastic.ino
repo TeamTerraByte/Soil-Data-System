@@ -6,7 +6,7 @@
 
 AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
-const String workerNum = "3";
+const String workerNum = "1";
 
 SDI12 enviroPro(SOIL_SENSOR_PIN);
 
@@ -85,7 +85,8 @@ void respondToNodes() {
   Measurements m = takeMeasurements();
 
   // Battery reading appended as the final tab-separated field
-  String batt = batteryField();
+  // String batt = batteryField();
+  String batt = "N/A";
 
   String payload = "@w" + workerNum + "r\t" + m.moist + "\t" + m.temp + "\t" + batt;
   sendMesh(payload);

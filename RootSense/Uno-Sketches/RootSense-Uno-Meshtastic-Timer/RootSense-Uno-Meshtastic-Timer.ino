@@ -6,18 +6,11 @@
 
 AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
-#define SLEEP_PIN 11
-#define BATTERY_PIN A0
+#define SLEEP_PIN 3
+
 const String workerNum = "3";
 
 SDI12 enviroPro(SOIL_SENSOR_PIN);
-
-// --- Battery monitor (integrated from Nano-Battery-Monitor.ino) ---
-// NOTE: This direct-read method only works if the battery voltage presented to A0 is < 5V.
-// If your battery can exceed ~5V at any time, use a resistor divider (or other scaling) first.
-// Calibrated ADC (Analog-to-Digital Converter) reference voltage (in Volts).
-// This should match the actual Vcc seen by the ATmega328P for best accuracy.
-const float ADC_REF = 4.96;    
 
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
@@ -28,17 +21,14 @@ struct Measurements {
   String temp;
 };
 
-float readBatteryVolts();
-String batteryField();
-
 String sendCommand(String command, const unsigned long timeout = 3000);
 
 
 void setup() {
-  Serial.begin(9600);
-  pinMode(BATTERY_PIN, INPUT);
   pinMode(SLEEP_PIN, OUTPUT);
   digitalWrite(SLEEP_PIN, LOW);
+  Serial.begin(9600);
+
   if (DEBUG){  // Debug purposes
     while(!Serial){
       delay(1000);
@@ -87,34 +77,14 @@ void respondToNodes() {
   // enviroPro.begin();  // TODO find out if I need to initialize again
   Measurements m = takeMeasurements();
 
-  // Battery reading appended as the final tab-separated field
-  String batt = batteryField();
-
-  String payload = "@w" + workerNum + "r\t" + m.moist + "\t" + m.temp + "\t" + batt;
+  String payload = "@w" + workerNum + "r\t" + m.moist + "\t" + m.temp;
   sendMesh(payload);
   delay(10000);
   Serial.println("Sleeping now");
   digitalWrite(SLEEP_PIN, HIGH);
-}
-
-float readBatteryVolts() {
-  // Analog pins read between 0 and 1023, where 1023 corresponds to ADC_REF volts.
-  const int reading = analogRead(BATTERY_PIN);
-  const float volts = (reading / 1023.0) * ADC_REF;
-
-  if (DEBUG) {
-    Serial.print(F("Battery raw ADC: "));
-    Serial.println(reading);
-    Serial.print(F("Battery volts: "));
-    Serial.println(volts, 3);
-  }
-  return volts;
-}
-
-String batteryField() {
-  // Keep the same "Label,value" style as the other fields.
-  const float v = readBatteryVolts();
-  return String(F("Batt,")) + String(v, 2);
+  delay(1);
+  digitalWrite(SLEEP_PIN, LOW);
+  delay(1);
 }
 
 void checkMeshInbound() {
