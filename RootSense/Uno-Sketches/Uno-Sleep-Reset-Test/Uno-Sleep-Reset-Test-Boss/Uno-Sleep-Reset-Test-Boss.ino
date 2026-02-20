@@ -1,42 +1,60 @@
-#define SLEEP_PIN 3
-#define TIMER_RESET_PIN 12
-// Analog maximum and minimum values
-#define A_MAX 255
-#define A_MIN 0
+#include <AltSoftSerial.h>
 
-void setup(){
-  pinMode(TIMER_RESET_PIN, OUTPUT);
-  digitalWrite(TIMER_RESET_PIN, LOW);
-  pinMode(SLEEP_PIN, OUTPUT);
-  digitalWrite(SLEEP_PIN, LOW);
-  delay(10000); // wait 10 seconds
-  digitalWrite(TIMER_RESET_PIN, HIGH);
-  delay(1000);
-  digitalWrite(TIMER_RESET_PIN, LOW);
+AltSoftSerial meshSerial;  // RX=8, TX=9
+const unsigned long POWER_STABILIZATION_DELAY = 15000; // 15 sec
+const int TIMER_RESET_PIN = 12;
+const int TIMER_SLEEP_PIN = 4;
+unsigned long lastTime = 0;
+
+void sendMesh(const String& s) {
+  meshSerial.print(s);
+  meshSerial.print('\n');   // final newline after the multi-line payload
+  Serial.print(F("Sent: "));
+  Serial.println(s);
 }
 
+void checkMeshInbound() {
+  while (meshSerial.available()) {
+    String line = meshSerial.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
 
-// void setup(){
-//   Serial.begin(9600);
-//   pinMode(SLEEP_PIN, OUTPUT);
-//   digitalWrite(SLEEP_PIN, LOW);
-//   delay(10000);   
-//   digitalWrite(SLEEP_PIN, HIGH);
-//   delay(1);
-//   digitalWrite(SLEEP_PIN, LOW);
-// }
+    Serial.print(F("Mesh RX: "));
+    Serial.println(line);
+  }
+}
 
-// void setup(){
-//   Serial.begin(9600);
-//   pinMode(SLEEP_PIN, OUTPUT);
-//   analogWrite(SLEEP_PIN, A_MIN);
-//   delay(10000);
-//   analogWrite(SLEEP_PIN, A_MAX);
-//   delay(1000);
-//   analogWrite(SLEEP_PIN, A_MIN);
-// }
+void checkTimedMeshInbound(unsigned long to){
+  unsigned long now = millis();
+  unsigned long end = now + to;
+  while (now < end){
+    checkMeshInbound();
+    delay(50);
+    now = millis();
+  }
+}
 
+void setup(){
+  pinMode(TIMER_SLEEP_PIN, OUTPUT);
+  digitalWrite(TIMER_SLEEP_PIN, LOW);
+  pinMode(TIMER_RESET_PIN, OUTPUT);
+  digitalWrite(TIMER_RESET_PIN, LOW);
+
+  Serial.begin(9600);
+  meshSerial.begin(38400);  
+  delay(POWER_STABILIZATION_DELAY);
+  lastTime = millis();
+}
 
 void loop(){
+  unsigned long thisTime = millis();
+  if (thisTime - lastTime >= 120000){   // delta > 2 minutes
+    lastTime = thisTime;
+    sendMesh("@wtq Reset");
+    checkTimedMeshInbound(20000);  // wait for a response
+    sendMesh("@wtq Sleep");
+  }
 
+  checkMeshInbound();
+  delay(50);
 }
