@@ -5,6 +5,7 @@ const unsigned long POWER_STABILIZATION_DELAY = 15000; // 15 sec
 const int TIMER_RESET_PIN = 12;
 const int TIMER_SLEEP_PIN = 4;
 unsigned long lastTime = 0;
+unsigned long thisTime = 0;
 
 void sendMesh(const String& s) {
   meshSerial.print(s);
@@ -44,15 +45,18 @@ void setup(){
   meshSerial.begin(38400);  
   delay(POWER_STABILIZATION_DELAY);
   lastTime = millis();
+  thisTime = millis();
 }
 
 void loop(){
-  unsigned long thisTime = millis();
   if (thisTime - lastTime >= 120000){   // delta > 2 minutes
     lastTime = thisTime;
     sendMesh("@wtq Reset");
     checkTimedMeshInbound(20000);  // wait for a response
     sendMesh("@wtq Sleep");
+  }
+  else {
+    thisTime = millis();
   }
 
   checkMeshInbound();

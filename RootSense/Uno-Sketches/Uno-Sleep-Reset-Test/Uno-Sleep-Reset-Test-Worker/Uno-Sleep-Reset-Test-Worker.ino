@@ -23,14 +23,16 @@ void checkMeshInbound() {
 
     if (line.indexOf("@wtq Reset") != -1) {
       sendMesh("@wtr Resetting");
+      delay(1000);
       digitalWrite(TIMER_RESET_PIN, HIGH);
       delay(1000);  // whole system should be off by now, but pulse JIC
       digitalWrite(TIMER_RESET_PIN, LOW);
     }
     else if (line.indexOf("@wtq Sleep") != -1){
       sendMesh("@wtr Sleeping");
+      delay(10000);
       digitalWrite(TIMER_SLEEP_PIN, HIGH);
-      delay(1000);  // whole system should be sleeping by now, but pulse JIC
+      delay(10000);  // whole system should be sleeping by now, but pulse JIC
       digitalWrite(TIMER_SLEEP_PIN, LOW);
     }
   }
