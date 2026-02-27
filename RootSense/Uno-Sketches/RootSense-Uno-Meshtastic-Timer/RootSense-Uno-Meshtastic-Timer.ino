@@ -6,7 +6,7 @@
 
 AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
-#define SLEEP_PIN 3
+#define DONE_PIN 4
 
 const String workerNum = "3";
 
@@ -25,8 +25,8 @@ String sendCommand(String command, const unsigned long timeout = 3000);
 
 
 void setup() {
-  pinMode(SLEEP_PIN, OUTPUT);
-  digitalWrite(SLEEP_PIN, LOW);
+  pinMode(DONE_PIN, OUTPUT);
+  digitalWrite(DONE_PIN, LOW);
   Serial.begin(9600);
 
   if (DEBUG){  // Debug purposes
@@ -81,9 +81,9 @@ void respondToNodes() {
   sendMesh(payload);
   delay(10000);
   Serial.println("Sleeping now");
-  digitalWrite(SLEEP_PIN, HIGH);
+  digitalWrite(DONE_PIN, HIGH);
   delay(1);
-  digitalWrite(SLEEP_PIN, LOW);
+  digitalWrite(DONE_PIN, LOW);
   delay(1);
 }
 
