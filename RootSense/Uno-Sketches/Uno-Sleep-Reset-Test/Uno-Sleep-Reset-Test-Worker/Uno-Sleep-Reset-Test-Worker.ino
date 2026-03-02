@@ -2,8 +2,9 @@
 
 AltSoftSerial meshSerial;  // RX=8, TX=9
 const unsigned long POWER_STABILIZATION_DELAY = 15000; // 15 sec
-const int TIMER_RESET_PIN = 12;
 const int TIMER_DONE_PIN = 4;
+const int TIMER_RESET_PIN = 11;
+const int TIMER_DRV_PIN = 7;
 
 void sendMesh(const String& s) {
   meshSerial.print(s);
@@ -30,9 +31,8 @@ void checkMeshInbound() {
     }
     else if (line.indexOf("@wtq Sleep") != -1){
       sendMesh("@wtr Sleeping");
-      delay(10000);
       digitalWrite(TIMER_DONE_PIN, HIGH);
-      delay(10000);  // whole system should be sleeping by now, but pulse JIC
+      delay(1000);  // whole system should be sleeping by now, but pulse JIC
       digitalWrite(TIMER_DONE_PIN, LOW);
     }
   }
@@ -43,6 +43,8 @@ void setup(){
   digitalWrite(TIMER_DONE_PIN, LOW);
   pinMode(TIMER_RESET_PIN, OUTPUT);
   digitalWrite(TIMER_RESET_PIN, LOW);
+  pinMode(TIMER_DRV_PIN, INPUT);
+  
 
   Serial.begin(9600);
   meshSerial.begin(38400);  
