@@ -223,7 +223,7 @@ bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs) {
 }
 
 
-// TODO: combine this with splitPayload
+// TODO: combine this with splitPayload   
 String parseLoRa(String data) {
   // Find the position of ':' which separates the node ID from the rest
   int colonIndex = data.indexOf(':');
