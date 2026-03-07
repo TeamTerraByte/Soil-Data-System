@@ -2,10 +2,15 @@
 // RX1 = pin 19, TX1 = pin 18
 
 void setup() {
+  // Turn on relay
+  pinMode(2, OUTPUT);
+  digitalWrite(2, HIGH);
+
+
   Serial.begin(9600);        // USB serial for debugging
   Serial1.begin(38400);      // Meshtastic serial baud
 
-  delay(500);
+  delay(5000);
 
   Serial.println(F("Meshtastic TX demo: sending initial message..."));
   sendMesh("Hello from Arduino Mega TX!");

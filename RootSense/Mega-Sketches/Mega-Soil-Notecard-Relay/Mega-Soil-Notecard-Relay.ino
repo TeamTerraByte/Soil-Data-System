@@ -35,14 +35,15 @@
 SDI12 mySDI12(DATA_PIN);
 String probeAddress = "C";
 unsigned long lastMeasurement = 0;
-const unsigned long MEASUREMENT_INTERVAL = 3600000; // 1 hour
+#define MEASUREMENT_INTERVAL 3600000 // 1 hour
 // const unsigned long MEASUREMENT_INTERVAL = 180000; // 3 minutes
-const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds
+#define POWER_STABILIZATION_DELAY 5000 // 5 seconds
 
 // ---------------- Meshtastic over Serial1 ----------------
 // Mega2560: TX1 = 18, RX1 = 19 (cross-wire to Meshtastic RX/TX)
 const unsigned long MESH_BAUD = 38400;
-const unsigned long MESH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+#define MESH_TIMEOUT_MS 300000 // 5 minutes
+#define MESH_RETRY_DELAY 60000 // 1 minute
 const int NUM_WORKERS = 2;
 const char* WORKERS[] = {  
   "@w1",
@@ -83,17 +84,15 @@ void splitPayload(const String& input,
 
 
 void setup() {
-  delay(2500);
   LOG_BEGIN(9600);
-  
-  pinMode(RELAY_PIN, OUTPUT);\
+  pinMode(RELAY_PIN, OUTPUT);
   // turn ON LoRa 32, SDI-12 sensor, and Notecard
-  digiitalWrite(RELAY_PIN, HIGH);
+  digitalWrite(RELAY_PIN, HIGH);
   
   delay(POWER_STABILIZATION_DELAY);
 
   notecard.begin();
-  notecard.setDebugOutputStream(Serial);
+  // notecard.setDebugOutputStream(Serial);
   {
     J *req = notecard.newRequest("hub.set");
     if (req != NULL) {
@@ -127,7 +126,7 @@ void setup() {
   LOG_PRINTLN(got);
 
   // turn OFF LoRa 32, SDI-12 sensor, and Notecard
-  digiitalWrite(RELAY_PIN, LOW);
+  digitalWrite(RELAY_PIN, LOW);
 }
 
 
@@ -252,17 +251,19 @@ void splitPayload(const String& input,
 uint8_t meshQueryNodes(unsigned long timeoutMs) {
   const unsigned long PER_CHAR_TO = 1500;
   unsigned long start = 0;
+  unsigned long lastRetry = 0;
   String line = "";
   uint8_t recvd = 0;
 
   for (int i = 0; i < NUM_WORKERS; i++) {
-    delay(30000);  // avoid Thingspeak rate limiting  (TODO look into removing this)
-    start = millis();
+    // delay(30000);  // avoid Thingspeak rate limiting  (TODO look into removing this)
 
     const String QUERY    = String(WORKERS[i]) + "q";
     const String RESPONSE = String(WORKERS[i]) + "r";
 
+    start = millis();
     meshSendLine(QUERY);
+    lastRetry = millis();
 
     while (millis() - start < timeoutMs) {
       if (meshReadLine(line, PER_CHAR_TO)) {
@@ -273,7 +274,7 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
           recvd++;
 
           // Command worker to reset its timer
-          meshSendLine(String(WORKERS[i]) + " q Reset");
+          meshSendLine(String(WORKERS[i]) + "q Reset");
           delay(15000);
 
           // Command worker to sleep
@@ -283,6 +284,11 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
           uploadNote(pm.header, pm.moist, pm.temp);
           break;
         }
+      }
+      if (millis() - lastRetry > MESH_RETRY_DELAY){
+        lastRetry = millis();
+        LOG_PRINTLN("[Mesh] Retrying");
+        meshSendLine(QUERY);
       }
     }
   }
