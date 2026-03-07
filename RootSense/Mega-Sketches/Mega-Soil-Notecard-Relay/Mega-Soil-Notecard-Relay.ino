@@ -72,7 +72,6 @@ void meshBegin();
 void meshSendLine(const String& line);
 uint8_t meshQueryNodes(unsigned long timeoutMs);
 bool meshReadLine(String& outLine, unsigned long perCharTimeoutMs);
-int queryNumber = 0;
 
 // LTE Notecard stuff
 #define productUID "edu.tamu.ag.jacob.poland:rootsense"
@@ -87,13 +86,19 @@ void setup() {
   delay(2500);
   LOG_BEGIN(9600);
   
+  pinMode(RELAY_PIN, OUTPUT);\
+  // turn ON LoRa 32, SDI-12 sensor, and Notecard
+  digiitalWrite(RELAY_PIN, HIGH);
+  
+  delay(POWER_STABILIZATION_DELAY);
+
   notecard.begin();
   notecard.setDebugOutputStream(Serial);
   {
     J *req = notecard.newRequest("hub.set");
     if (req != NULL) {
       JAddStringToObject(req, "product", productUID);
-      // JAddStringToObject(req, "mode", "continuous");  // too power hungry?
+      // JAddStringToObject(req, "mode", "continuous");
       JAddStringToObject(req, "mode", "minimum"); 
       JAddNumberToObject(req, "outbound", 1);
       notecard.sendRequest(req);
@@ -102,8 +107,6 @@ void setup() {
 
   // Bring up Meshtastic serial
   meshBegin();
-
-  delay(POWER_STABILIZATION_DELAY);
 
   // Initialize SDI-12 after power stabilization
   mySDI12.begin();
@@ -122,12 +125,18 @@ void setup() {
   uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
   LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
   LOG_PRINTLN(got);
+
+  // turn OFF LoRa 32, SDI-12 sensor, and Notecard
+  digiitalWrite(RELAY_PIN, LOW);
 }
 
 
 void loop() {
   // Periodic SDI-12 measurement
   if (millis() - lastMeasurement >= MEASUREMENT_INTERVAL) {
+    // turn ON sensor, LoRa, and LTE
+    digitalWrite(RELAY_PIN, HIGH);
+    delay(POWER_STABILIZATION_DELAY);
 
     // local sensor measurement
     mySDI12.begin();
@@ -140,7 +149,9 @@ void loop() {
     uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
     LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
     LOG_PRINTLN(got);
-    queryNumber += 1;
+
+    // turn OFF sensor, LoRa, and LTE
+    digitalWrite(RELAY_PIN, LOW);
   }
 
   // (Optional) Non-blocking echo of any unsolicited mesh text to USB
