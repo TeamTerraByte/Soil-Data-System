@@ -42,12 +42,9 @@ const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 seconds
 // ---------------- Meshtastic over Serial1 ----------------
 // Mega2560: TX1 = 18, RX1 = 19 (cross-wire to Meshtastic RX/TX)
 const unsigned long MESH_BAUD = 38400;
-const unsigned long MESH_TIMEOUT_MS = 120000; // 2 minutes
-const uint8_t REQUIRED_NODE_COUNT = 1;        // configurable device count
-const char* BOSS_PREFIX = "@boss";              // expected response prefix
-const char* WORKERS_QUERY = "@workers";           // query we send
+const unsigned long MESH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const int NUM_WORKERS = 2;
-const char* WORKERS[] = {
+const char* WORKERS[] = {  
   "@w1",
   "@w2"
 };
@@ -248,25 +245,32 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
   uint8_t recvd = 0;
 
   for (int i = 0; i < NUM_WORKERS; i++) {
-    delay(30000);  // avoid Thingspeak rate limiting
+    delay(30000);  // avoid Thingspeak rate limiting  (TODO look into removing this)
     start = millis();
 
     const String QUERY    = String(WORKERS[i]) + "q";
     const String RESPONSE = String(WORKERS[i]) + "r";
 
-    meshSendLine(QUERY);  // q represents query
+    meshSendLine(QUERY);
 
     while (millis() - start < timeoutMs) {
       if (meshReadLine(line, PER_CHAR_TO)) {
-        if (line.indexOf(RESPONSE) != -1) {  // r represents response
+        if (line.indexOf(RESPONSE) != -1) {
           String payload = parseLoRa(line);
 
           Serial.println(String("Parsed data from ") + WORKERS[i] + ":" + line);
           recvd++;
+
+          // Command worker to reset its timer
+          meshSendLine(String(WORKERS[i]) + " q Reset");
+          delay(15000);
+
+          // Command worker to sleep
+          meshSendLine(String(WORKERS[i]) + "q Sleep");
           
           ParsedMessage pm = parseMessage(line);
           uploadNote(pm.header, pm.moist, pm.temp);
-          break;  
+          break;
         }
       }
     }
