@@ -44,10 +44,10 @@ unsigned long lastMeasurement = 0;
 const unsigned long MESH_BAUD = 38400;
 #define MESH_TIMEOUT_MS 300000 // 5 minutes
 #define MESH_RETRY_DELAY 60000 // 1 minute
-const int NUM_WORKERS = 2;
+const int NUM_WORKERS = 1;
 const char* WORKERS[] = {  
   "@w1",
-  "@w2"
+  // "@w2"
 };
 
 struct ParsedMessage {
@@ -125,6 +125,7 @@ void setup() {
   LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
   LOG_PRINTLN(got);
 
+  delay(10000);  // generous delay to allow last Sleep command to send
   // turn OFF LoRa 32, SDI-12 sensor, and Notecard
   digitalWrite(RELAY_PIN, LOW);
 }
@@ -258,7 +259,7 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
   for (int i = 0; i < NUM_WORKERS; i++) {
     // delay(30000);  // avoid Thingspeak rate limiting  (TODO look into removing this)
 
-    const String QUERY    = String(WORKERS[i]) + "q";
+    const String QUERY    = String(WORKERS[i]) + "q Measure";
     const String RESPONSE = String(WORKERS[i]) + "r";
 
     start = millis();
@@ -273,15 +274,13 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
           Serial.println(String("Parsed data from ") + WORKERS[i] + ":" + line);
           recvd++;
 
-          // Command worker to reset its timer
-          meshSendLine(String(WORKERS[i]) + "q Reset");
-          delay(15000);
-
           // Command worker to sleep
           meshSendLine(String(WORKERS[i]) + "q Sleep");
           
           ParsedMessage pm = parseMessage(line);
           uploadNote(pm.header, pm.moist, pm.temp);
+
+
           break;
         }
       }

@@ -8,15 +8,16 @@ AltSoftSerial meshSerial;  // RX=8, TX=9 on Uno
 #define SOIL_SENSOR_PIN 2
 const String workerNum = "1";
 
-const int TIMER_DONE_PIN = 4;
-const int TIMER_RESET_PIN = 11;
-const int TIMER_DRV_PIN = 7;  // used to detect timer status
+const int RELAY_PIN = 4;
 
 SDI12 enviroPro(SOIL_SENSOR_PIN);
 
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 
+const unsigned long RELAY_OFF_DURATION = 3540000UL; // 59 minutes
+unsigned long relayOffStart = 0;
+bool relayActive = true;
 
 struct Measurements {
   String moist;
@@ -29,12 +30,8 @@ String sendCommand(String command, const unsigned long timeout = 3000);
 
 void setup() {
   Serial.begin(9600);
-  pinMode(TIMER_DONE_PIN, OUTPUT);
-  pinMode(TIMER_RESET_PIN, OUTPUT);
-  pinMode(TIMER_DRV_PIN, INPUT);  // used to detect timer status
-
-  digitalWrite(TIMER_DONE_PIN, LOW);
-  digitalWrite(TIMER_RESET_PIN, LOW);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH);  // turn on LoRa 32 and soil sensor
 
   if (DEBUG){  // Debug purposes
     while(!Serial){
@@ -49,6 +46,8 @@ void setup() {
 }
 
 void loop() {
+  delay(50); // slow down loop slightly
+
   // Allow manual SDI-12 commands via USB Serial (debug)
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
@@ -64,12 +63,13 @@ void loop() {
     }
   }
 
-  // Listen for inbound Meshtastic TEXTMSG lines
-  checkMeshInbound();
-
-  
-  delay(50); // normal delay for normal operation
-  // delay(10000);  // long delay for debugging
+  if (relayActive){
+    checkMeshInbound();
+  }
+  else if (millis() - relayOffStart >= RELAY_OFF_DURATION){
+    digitalWrite(RELAY_PIN, HIGH);
+    relayActive = true;
+  }
 }
 
 void sendMesh(const String& s) {
@@ -107,19 +107,12 @@ void checkMeshInbound() {
         respondToNodes();
       }
     }
-    else if (line.indexOf(workerTag + "q Reset") != -1) {
-      sendMesh(workerTag + " Status Resetting");
-      delay(10000);
-      digitalWrite(TIMER_RESET_PIN, HIGH);
-      delay(1000);  // whole system should be off by now, but pulse JIC
-      digitalWrite(TIMER_RESET_PIN, LOW);
-    }
     else if (line.indexOf(workerTag + "q Sleep") != -1){
       sendMesh(workerTag + " Status Sleeping");
-      delay(10000);  // wait so LoRa 32 has time to respond
-      digitalWrite(TIMER_DONE_PIN, HIGH);
-      delay(1000);  // whole system should be sleeping by now, but pulse JIC
-      digitalWrite(TIMER_DONE_PIN, LOW);
+      delay(10000);  // generous delay to allow time for the status message
+      digitalWrite(RELAY_PIN, LOW);
+      relayOffStart = millis();
+      relayActive = false;
     }
   }
 }
