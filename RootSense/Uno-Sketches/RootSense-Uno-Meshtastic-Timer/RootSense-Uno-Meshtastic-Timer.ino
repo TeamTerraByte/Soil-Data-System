@@ -15,8 +15,8 @@ SDI12 enviroPro(SOIL_SENSOR_PIN);
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 
-// const unsigned long RELAY_OFF_DURATION = 3540000UL; // 59 minutes
-const unsigned long RELAY_OFF_DURATION = 300000UL; // 5 minutes
+const unsigned long RELAY_OFF_DURATION = 3540000UL; // 59 minutes
+// const unsigned long RELAY_OFF_DURATION = 60000UL; // 1 minute
 unsigned long relayOffStart = 0;
 bool relayActive = true;
 
@@ -112,7 +112,14 @@ void checkMeshInbound() {
     }
     else if (line.indexOf(workerTag + "q Sleep") != -1){
       sendMesh(workerTag + " Status Sleeping");
-      delay(10000);  // generous delay to allow time for the status message
+
+      // delay to allow the LoRa 32 to return the status message
+      // I'm using a loop here because I think a single long delay
+      // will block other operations, such as the serial use in sendMesh
+      for (int i = 0; i < 20; i++){
+        delay(500);
+      }
+
       digitalWrite(RELAY_PIN, LOW);
       relayOffStart = millis();
       relayActive = false;
@@ -156,7 +163,6 @@ String measureSoilMoisture() {
     Serial.println("Moisture Measure Attempt # " + String(try_num));
 
     response = sendCommand(measureCommand);
-    // delay(measureTime);
     String dataResponse = sendCommand(dataCommand);
 
     if (dataResponse.length() == 57 && hasValidChars(dataResponse.substring(1))) {

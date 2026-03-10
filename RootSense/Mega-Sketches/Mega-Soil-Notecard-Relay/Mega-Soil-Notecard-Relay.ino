@@ -35,8 +35,8 @@
 SDI12 mySDI12(DATA_PIN);
 String probeAddress = "C";
 unsigned long lastMeasurement = 0;
-// #define MEASUREMENT_INTERVAL 3600000 // 1 hour
-const unsigned long MEASUREMENT_INTERVAL = 300000UL; // 5 minutes
+#define MEASUREMENT_INTERVAL 3600000 // 1 hour
+// const unsigned long MEASUREMENT_INTERVAL = 120000UL; // 2 minutes
 #define POWER_STABILIZATION_DELAY 5000 // 5 seconds
 
 // ---------------- Meshtastic over Serial1 ----------------
@@ -66,7 +66,7 @@ String parseTemperatureData(String data);
 bool findProbe();
 void uploadNote(String device, String moist, String temp);
 ParsedMessage parseMessage(const String& input);
-void waitForSyncCompletion(unsigned long pollIntervalMs);
+void waitForSyncCompletion(unsigned long pollIntervalMs  = 2000);
 
 // Meshtastic helpers
 void meshBegin();
@@ -99,7 +99,7 @@ void setup() {
       JAddStringToObject(req, "product", productUID);
       // JAddStringToObject(req, "mode", "continuous");
       JAddStringToObject(req, "mode", "minimum"); 
-      JAddNumberToObject(req, "outbound", 1);
+      // JAddNumberToObject(req, "outbound", 1);
       notecard.sendRequest(req);
     }
   }
@@ -117,7 +117,6 @@ void setup() {
 
   LOG_PRINTLN(F("Taking first measurement..."));
   takeMeasurements();
-  lastMeasurement = millis();
 
   // --- Query mesh nodes once at startup ---
   LOG_PRINTLN(F("[Mesh] Querying nodes..."));
@@ -125,7 +124,9 @@ void setup() {
   LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
   LOG_PRINTLN(got);
 
-  delay(10000);  // generous delay to allow last Sleep command to send
+  delay(15000);  // generous delay to allow last Sleep command to send
+  lastMeasurement = millis();
+  // waitForSyncCompletion();
   // turn OFF LoRa 32, SDI-12 sensor, and Notecard
   digitalWrite(RELAY_PIN, LOW);
 }
@@ -141,15 +142,14 @@ void loop() {
     // local sensor measurement
     mySDI12.begin();
     takeMeasurements();
-    lastMeasurement = millis();
-
-    delay(500);  // delay so it doesn't block the meshtastic query?
 
     // other sensor measurements
     uint8_t got = meshQueryNodes(MESH_TIMEOUT_MS);
     LOG_PRINT(F("[Mesh] Discovery complete. Responses: "));
     LOG_PRINTLN(got);
-
+    delay(15000);  // generous delay to allow last Sleep command to send
+    lastMeasurement = millis();
+    // waitForSyncCompletion();
     // turn OFF sensor, LoRa, and LTE
     digitalWrite(RELAY_PIN, LOW);
   }
@@ -261,6 +261,7 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
 
     const String QUERY    = String(WORKERS[i]) + "q Measure";
     const String RESPONSE = String(WORKERS[i]) + "r";
+    String sleepResponse = "";
 
     start = millis();
     meshSendLine(QUERY);
@@ -274,11 +275,32 @@ uint8_t meshQueryNodes(unsigned long timeoutMs) {
           Serial.println(String("Parsed data from ") + WORKERS[i] + ":" + line);
           recvd++;
 
-          // Command worker to sleep
-          meshSendLine(String(WORKERS[i]) + "q Sleep");
-          
           ParsedMessage pm = parseMessage(line);
           uploadNote(pm.header, pm.moist, pm.temp);
+
+          bool workerAsleep = false;
+
+          // Command worker to sleep
+          for (int sleepAttempt = 0; sleepAttempt < 5; sleepAttempt++){
+            meshSendLine(String(WORKERS[i]) + "q Sleep");
+            for (int sleepDelay = 0; sleepDelay < 10; sleepDelay++){
+              delay(500);
+              if (meshReadLine(sleepResponse, PER_CHAR_TO)){
+                break;
+              }
+            }
+
+            if (sleepResponse.indexOf(String(WORKERS[i]) + " Status Sleeping") != -1){
+              workerAsleep = true;
+              break;
+            }
+          }
+          if (!workerAsleep){
+            LOG_PRINTLN(String(WORKERS[i]) + " failed to sleep");
+            meshSendLine(String(WORKERS[i]) + " failed to sleep");
+          }
+
+
 
 
           break;
@@ -484,11 +506,18 @@ void uploadNote(String device, String moist, String temp){
         JAddStringToObject(body, "moist", moist.c_str());
         JAddStringToObject(body, "temp", temp.c_str());
       }
-      notecard.sendRequest(req);
+      
+      // notecard.sendRequest(req);
+      J* rsp = notecard.requestAndResponse(req);
+      LOG_PRINTLN(JConvertToJSONString(rsp));  // TODO: {"total":1} indicates a successful upload?
+      notecard.deleteResponse(rsp);
     }
     else {
       Serial.println("Error creating data request for " + device);
     }
+  }
+  for (int i = 0; i < 30; i++){
+    delay(500);
   }
 }
 
@@ -531,7 +560,7 @@ ParsedMessage parseMessage(const String& input) {
 }
 
 
-void waitForSyncCompletion(unsigned long pollIntervalMs = 2000) {
+void waitForSyncCompletion(unsigned long pollIntervalMs) {
   while (true) {
     // Create hub.sync.status request
     J *req = notecard.newRequest("hub.sync.status");
