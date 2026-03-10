@@ -35,8 +35,8 @@
 SDI12 mySDI12(DATA_PIN);
 String probeAddress = "C";
 unsigned long lastMeasurement = 0;
-#define MEASUREMENT_INTERVAL 3600000 // 1 hour
-// const unsigned long MEASUREMENT_INTERVAL = 180000; // 3 minutes
+// #define MEASUREMENT_INTERVAL 3600000 // 1 hour
+const unsigned long MEASUREMENT_INTERVAL = 300000UL; // 5 minutes
 #define POWER_STABILIZATION_DELAY 5000 // 5 seconds
 
 // ---------------- Meshtastic over Serial1 ----------------

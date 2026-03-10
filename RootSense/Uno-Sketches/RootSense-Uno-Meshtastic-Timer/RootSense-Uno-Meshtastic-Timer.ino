@@ -15,7 +15,8 @@ SDI12 enviroPro(SOIL_SENSOR_PIN);
 String probeAddress = "C";
 const unsigned long POWER_STABILIZATION_DELAY = 5000; // 5 sec
 
-const unsigned long RELAY_OFF_DURATION = 3540000UL; // 59 minutes
+// const unsigned long RELAY_OFF_DURATION = 3540000UL; // 59 minutes
+const unsigned long RELAY_OFF_DURATION = 300000UL; // 5 minutes
 unsigned long relayOffStart = 0;
 bool relayActive = true;
 
@@ -30,17 +31,19 @@ String sendCommand(String command, const unsigned long timeout = 3000);
 
 void setup() {
   Serial.begin(9600);
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);  // turn on LoRa 32 and soil sensor
-
   if (DEBUG){  // Debug purposes
     while(!Serial){
       delay(1000);
     }
     Serial.println("Serial inited");
   }
-  meshSerial.begin(38400);
   delay(POWER_STABILIZATION_DELAY);
+
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH);  // turn on LoRa 32 and soil sensor
+  delay(POWER_STABILIZATION_DELAY);
+
+  meshSerial.begin(38400);
 
   enviroPro.begin();
 }
@@ -153,7 +156,7 @@ String measureSoilMoisture() {
     Serial.println("Moisture Measure Attempt # " + String(try_num));
 
     response = sendCommand(measureCommand);
-    delay(measureTime);
+    // delay(measureTime);
     String dataResponse = sendCommand(dataCommand);
 
     if (dataResponse.length() == 57 && hasValidChars(dataResponse.substring(1))) {
