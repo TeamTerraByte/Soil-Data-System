@@ -1,9 +1,17 @@
 // Arduino Mega RX-only Meshtastic reader
-// Uses hardware UART Serial1 instead of AltSoftSerial
+// Uses hardware UART MeshSerial instead of AltSoftSerial
+
+
+#define RELAY_PIN 2
+
+#define MeshSerial Serial1
 
 void setup() {
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH);
   Serial.begin(9600);        // USB serial for debug
-  Serial1.begin(38400);      // Meshtastic UART baud (must match node)
+  MeshSerial.begin(38400);      // Meshtastic UART baud (must match node)
+
 
   delay(500);
 
@@ -12,8 +20,8 @@ void setup() {
 
 void loop() {
   // Read all incoming characters from Meshtastic and echo to USB serial
-  while (Serial1.available()) {
-    char c = Serial1.read();
+  while (MeshSerial.available()) {
+    char c = MeshSerial.read();
     Serial.write(c);
   }
 }

@@ -88,6 +88,7 @@ Notecard notecard;
 
 void setup() {
   LOG_BEGIN(9600);
+  LOG_PRINTLN("Log Serial Initialized");
   pinMode(RELAY_PIN, OUTPUT);
   
   // Turn ON LoRa 32, SDI-12 sensor, and Notecard
